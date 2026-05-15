@@ -1,0 +1,20 @@
+[project]
+name = "payledger-api"
+version = "0.1.0"
+description = "Backend API for payment reconciliation and ledger management"
+requires-python = ">=3.14"
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
