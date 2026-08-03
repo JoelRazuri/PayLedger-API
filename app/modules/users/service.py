@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.users.exceptions import UserAlreadyExistsError, UserNotFoundError
@@ -14,7 +15,13 @@ def create_user(db: Session, user_data: UserCreate) -> User:
     user = User(email=user_data.email, full_name=user_data.full_name)
 
     db.add(user)
-    db.commit()
+
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise UserAlreadyExistsError from error
+
     db.refresh(user)
 
     return user
