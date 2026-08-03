@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_version: str
     environment: str
     database_url: str
+    database_echo: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",
