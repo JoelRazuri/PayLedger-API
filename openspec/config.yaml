@@ -1,0 +1,39 @@
+schema: spec-driven
+
+context: |
+  Stack: Python 3.14, FastAPI, Pydantic v2, SQLAlchemy 2, PostgreSQL, Alembic.
+  Architecture: Feature modules with model, schema, service, router, and exceptions.
+  Testing: Pytest and HTTPX are installed; no tests or coverage tooling exist yet.
+  Style: Typed Python, Spanish HTTP messages, Ruff E/F/I, 88-character lines.
+
+testing:
+  strict_tdd: true
+  runner: pytest
+  test_command: ".\\.venv\\Scripts\\python.exe -m pytest"
+  layers:
+    unit: available
+    integration: available
+    e2e: unavailable
+  coverage: unavailable
+
+rules:
+  proposal:
+    - Keep scope small and include rollback and success criteria.
+  specs:
+    - Use RFC 2119 keywords and Given/When/Then scenarios.
+    - Describe observable behavior without implementation details.
+  design:
+    - Record decisions and rationale; diagrams only for complex flows.
+  tasks:
+    - Use hierarchical numbering and tasks completable in one session.
+  apply:
+    tdd: true
+    test_command: ".\\.venv\\Scripts\\python.exe -m pytest"
+    guidelines:
+      - Follow existing module boundaries and keep HTTP concerns in routers.
+  verify:
+    test_command: ".\\.venv\\Scripts\\python.exe -m pytest"
+    build_command: ".\\.venv\\Scripts\\python.exe -c \"import app.main\""
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas.
