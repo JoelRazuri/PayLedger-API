@@ -4,8 +4,10 @@
 
 - Delivery strategy: `auto-chain`
 - Chain strategy: `stacked-to-main`
-- Current work unit: Unit 1, credential foundation and schema
-- Intended boundary: PR/commit 1 only; workflow and HTTP integration remain pending
+- Current work unit: Unit 2, auth workflows
+- Completed boundaries: PR/commit 1 foundation and PR/commit 2 workflows
+- Current boundary: users persistence primitives through authenticated-user
+  dependency; HTTP integration remains pending
 - Strict TDD: enabled
 
 ## Completed Tasks
@@ -17,6 +19,11 @@
 - [x] 2.2 User credential model and reversible migration
 - [x] 2.3 Reusable user input and auth schemas
 - [x] 2.4 Argon2 and JWT security helpers
+- [x] 3.1 Users-service RED coverage
+- [x] 3.2 Normalized credential persistence primitives
+- [x] 3.3 Auth-service RED coverage
+- [x] 3.4 Registration, login, and identity-resolution services
+- [x] 3.5 Bearer dependency RED-GREEN coverage
 
 ## TDD Cycle Evidence
 
@@ -29,6 +36,11 @@
 | 2.2 | Model and migration tests above | Unit/integration | 13/13 baseline | Covered by task 1.3 RED | Required mappings and reversible revision passed | Application default and transient migration default exercise distinct paths | Manual migration review plus real PostgreSQL cycle passed |
 | 2.3 | Schema tests above | Unit | 13/13 baseline | Covered by task 1.1 RED | Registration and safe response schemas passed | Both accepted and rejected boundaries covered | Existing `UserCreate` remains compatible until HTTP ownership moves |
 | 2.4 | Security tests above | Unit | 13/13 baseline | Covered by task 1.2 RED | Real Argon2 and PyJWT tests passed | Success, mismatch, dummy, malformed, expired, and invalid subject paths covered | Focused helpers preserve a small auth API; 21/21 passed |
+| 3.1 | `tests/modules/users/test_service.py` | Unit | 34/34 baseline | Focused collection failed because credential creation primitive did not exist | Paired task 3.2 passed | Mixed-case lookup, successful persistence, existing duplicate, and integrity race | Query/persistence boundary remains inside users; 18/18 passed |
+| 3.2 | Users service tests above | Unit | 34/34 baseline | Covered by task 3.1 RED | Normalized lookup and hash-only creation passed | Pre-query duplicate and commit-race rollback exercise separate paths | Existing public creation remains untouched until unit 3; 18/18 passed |
+| 3.3 | `tests/modules/auth/test_service.py` | Unit | 34/34 baseline | Focused collection failed because auth exceptions/service did not exist | Paired task 3.4 passed | Register/duplicate, active/wrong/unknown/inactive login, active/unknown/inactive identity | External functions patched at service boundary; 18/18 passed |
+| 3.4 | Auth service tests above | Unit | 34/34 baseline | Covered by task 3.3 RED | Registration, token login, and identity resolution passed | Unknown email performs dummy verification; inactive status is checked only after valid password | One-way `auth -> users` dependency preserved; 18/18 passed |
+| 3.5 | `tests/modules/auth/test_dependencies.py` | Unit/integration | 34/34 baseline | Focused collection failed because bearer dependency did not exist | Missing, invalid, valid, unknown, and inactive cases passed | Missing, malformed, expired, unknown, inactive, and successful identity paths | Shared credential exception helper and `Never` return clarify fail-closed flow; 19/19 passed |
 
 ## Test Summary
 
@@ -38,11 +50,15 @@
 - Focused GREEN: `21 passed in 1.06s`
 - Focused post-refactor: `21 passed in 1.34s`
 - Full compatibility suite: `34 passed in 2.41s`
+- Unit 2 initial RED: three collection errors for missing workflow APIs
+- Unit 2 focused GREEN: `18 passed in 0.99s`
+- Unit 2 focused post-refactor: `19 passed in 1.41s`
+- Unit 2 full compatibility suite: `53 passed in 2.54s`
 - Layers used: unit and migration integration
 - Approval tests: none; existing name behavior was preserved through its current tests
 - Pure/bounded helpers created: password hash/verify, dummy verify, JWT encode/decode
 
-## Work Unit Evidence
+## Work Unit 1 Evidence
 
 | Evidence | Result |
 |---|---|
@@ -51,6 +67,17 @@
 | Static quality | `ruff check app tests alembic` -> All checks passed |
 | Import | With process-local `JWT_SECRET`: `import app.main` -> OK |
 | Rollback boundary | Revert `requirements.txt`, JWT fields in `app/core/settings.py`, auth schema/security package, user model/schema credential changes, tests/package markers, and migration `b73c6cb6e54a`; run `alembic downgrade 3e81fa4d59d2`. Workflow/router files are untouched. |
+
+## Work Unit 2 Evidence
+
+| Evidence | Result |
+|---|---|
+| Focused test | `.\.venv\Scripts\python.exe -m pytest tests/modules/auth/test_service.py tests/modules/auth/test_dependencies.py tests/modules/users/test_service.py -q` -> 19 passed |
+| Runtime harness | With process-local `JWT_SECRET`, a real PostgreSQL session registered a unique mixed-case email, verified that only an Argon2 hash was stored, logged in case-insensitively, decoded/resolved the bearer identity through `get_current_user`, asserted active state, and deleted the exact harness user -> `service runtime OK: user_id=1, token_user_id=1` |
+| Full suite | `.\.venv\Scripts\python.exe -m pytest -q` -> 53 passed |
+| Static quality | `.\.venv\Scripts\ruff.exe check app tests alembic` -> All checks passed |
+| Import | With process-local `JWT_SECRET`: `import app.main` -> OK |
+| Rollback boundary | Revert credential primitives in `app/modules/users/service.py`, `app/modules/auth/{exceptions,service,dependencies}.py`, and their three focused test files. Foundation, routers, `app/main.py`, and database schema remain intact. |
 
 ## Migration Review
 
@@ -68,7 +95,10 @@ imports the user model, so no discovery change was necessary.
 - `jwt_secret` intentionally has no production default. Tests set an explicit
   test-only value, and non-test commands must receive `JWT_SECRET` through the
   environment or local `.env`.
+- Unit 2 introduced no design deviation. Dependencies form the HTTP-aware
+  authentication boundary and translate domain failures to Spanish 401/403;
+  services remain independent of HTTP.
 
 ## Remaining Tasks
 
-Tasks 3.1 through 5.2 remain pending for the workflow and HTTP slices.
+Tasks 4.1 through 5.2 remain pending for HTTP integration and final verification.

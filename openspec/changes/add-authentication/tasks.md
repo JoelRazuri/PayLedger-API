@@ -39,11 +39,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Workflow RED-GREEN
 
-- [ ] 3.1 Add failing `tests/modules/users/test_service.py` cases for normalized lookup, credential creation, and duplicate rollback.
-- [ ] 3.2 Implement normalized lookup/create primitives in `app/modules/users/service.py`.
-- [ ] 3.3 Add failing auth-service tests for registration, duplicates, active login, wrong/unknown credentials with dummy verification, and inactive rejection.
-- [ ] 3.4 Create `app/modules/auth/exceptions.py` and `app/modules/auth/service.py` to register, authenticate, and resolve users through users primitives.
-- [ ] 3.5 Add failing dependency tests for missing/invalid/expired tokens and valid, unknown, or inactive users; implement `app/modules/auth/dependencies.py`.
+- [x] 3.1 Add failing `tests/modules/users/test_service.py` cases for normalized lookup, credential creation, and duplicate rollback.
+- [x] 3.2 Implement normalized lookup/create primitives in `app/modules/users/service.py`.
+- [x] 3.3 Add failing auth-service tests for registration, duplicates, active login, wrong/unknown credentials with dummy verification, and inactive rejection.
+- [x] 3.4 Create `app/modules/auth/exceptions.py` and `app/modules/auth/service.py` to register, authenticate, and resolve users through users primitives.
+- [x] 3.5 Add failing dependency tests for missing/invalid/expired tokens and valid, unknown, or inactive users; implement `app/modules/auth/dependencies.py`.
 
 ## Phase 4: HTTP Integration RED-GREEN
 
