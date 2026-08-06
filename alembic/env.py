@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.core.database import Base
 from app.core.settings import get_settings
+from app.modules.payments import model as payments_model  # noqa: F401
 from app.modules.users import model as users_model  # noqa: F401
 
 # this is the Alembic Config object, which provides
