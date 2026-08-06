@@ -33,9 +33,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Creation and Discovery (PR2)
 
-- [ ] 2.1 **RED**: extend tests/modules/payments/test_service.py for Create, Replay, Key conflict, Independent owner keys, List, and Non-disclosure scenarios.
-- [ ] 2.2 **GREEN**: create app/modules/payments/{service,exceptions}.py with fingerprint/race handling, owned newest-first filters/pagination, and no mutation/deletion operations.
-- [ ] 2.3 **REFACTOR**: centralize owner-scoped lookup and transaction helpers; rerun the focused command.
+- [x] 2.1 **RED**: extend tests/modules/payments/test_service.py for Create, Replay, Key conflict, Independent owner keys, List, and Non-disclosure scenarios.
+- [x] 2.2 **GREEN**: create app/modules/payments/{service,exceptions}.py with fingerprint/race handling, owned newest-first filters/pagination, and no mutation/deletion operations.
+- [x] 2.3 **REFACTOR**: centralize owner-scoped lookup and transaction helpers; rerun the focused command.
 
 ## Phase 3: Processing (PR3)
 
