@@ -47,11 +47,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: HTTP Integration RED-GREEN
 
-- [ ] 4.1 Move registration/name tests into failing `tests/modules/auth/test_router.py`; cover safe 201, duplicate 409, login 200/401/403, `/auth/me`, and Spanish errors.
-- [ ] 4.2 Add failing assertions for public GET routes and unavailable `POST /users`.
-- [ ] 4.3 Create `app/modules/auth/router.py`, remove user creation from `app/modules/users/router.py`, and include the auth router in `app/main.py`.
+- [x] 4.1 Move registration/name tests into failing `tests/modules/auth/test_router.py`; cover safe 201, duplicate 409, login 200/401/403, `/auth/me`, and Spanish errors.
+- [x] 4.2 Add failing assertions for public GET routes and unavailable `POST /users`.
+- [x] 4.3 Create `app/modules/auth/router.py`, remove user creation from `app/modules/users/router.py`, and include the auth router in `app/main.py`.
 
 ## Phase 5: Refactor and Verification
 
-- [ ] 5.1 Refactor duplication while preserving `auth -> users`; run each focused suite.
-- [ ] 5.2 Run full pytest, Ruff, application import, and the local Alembic upgrade/downgrade/upgrade harness; record results for SDD verification.
+- [x] 5.1 Refactor duplication while preserving `auth -> users`; run each focused suite.
+- [x] 5.2 Run full pytest, Ruff, application import, and the local Alembic upgrade/downgrade/upgrade harness; record results for SDD verification.

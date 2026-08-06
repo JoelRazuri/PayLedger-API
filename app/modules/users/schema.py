@@ -29,10 +29,6 @@ class UserInput(BaseModel):
         return normalized_name
 
 
-class UserCreate(UserInput):
-    pass
-
-
 class UserResponse(BaseModel):
     id: int
     email: EmailStr

@@ -63,3 +63,24 @@ def test_token_response_has_oauth2_bearer_shape() -> None:
         "access_token": "signed-token",
         "token_type": "bearer",
     }
+
+
+@pytest.mark.parametrize(
+    ("full_name", "expected"),
+    [
+        ("AB", "AB"),
+        ("x" * 255, "x" * 255),
+        ("Renée O'Connor-Smith", "Renée O'Connor-Smith"),
+    ],
+)
+def test_register_request_preserves_supported_name_boundaries(
+    full_name: str,
+    expected: str,
+) -> None:
+    request = RegisterRequest(
+        email="ana@example.com",
+        full_name=full_name,
+        password="plain-password",
+    )
+
+    assert request.full_name == expected

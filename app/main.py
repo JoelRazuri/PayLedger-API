@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.core.settings import get_settings
+from app.modules.auth.router import router as auth_router
 from app.modules.users.router import router as users_router
 
 settings = get_settings()
@@ -11,6 +12,7 @@ app = FastAPI(
     description="Backend API for payment reconciliation and ledger management",
 )
 
+app.include_router(auth_router)
 app.include_router(users_router)
 
 

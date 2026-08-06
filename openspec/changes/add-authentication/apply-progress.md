@@ -4,10 +4,11 @@
 
 - Delivery strategy: `auto-chain`
 - Chain strategy: `stacked-to-main`
-- Current work unit: Unit 2, auth workflows
-- Completed boundaries: PR/commit 1 foundation and PR/commit 2 workflows
-- Current boundary: users persistence primitives through authenticated-user
-  dependency; HTTP integration remains pending
+- Current work unit: Unit 3, HTTP integration, complete
+- Completed boundaries: PR/commit 1 foundation, PR/commit 2 workflows, and
+  PR/commit 3 HTTP integration
+- Current boundary: public registration through authenticated profile, with
+  public user reads and passwordless user creation removed
 - Strict TDD: enabled
 
 ## Completed Tasks
@@ -24,6 +25,11 @@
 - [x] 3.3 Auth-service RED coverage
 - [x] 3.4 Registration, login, and identity-resolution services
 - [x] 3.5 Bearer dependency RED-GREEN coverage
+- [x] 4.1 Auth HTTP RED coverage and moved name validation
+- [x] 4.2 Public user reads and unavailable legacy creation coverage
+- [x] 4.3 Auth router, users route ownership, and application wiring
+- [x] 5.1 Cross-slice refactor and focused suites
+- [x] 5.2 Full verification and runtime harnesses
 
 ## TDD Cycle Evidence
 
@@ -41,6 +47,11 @@
 | 3.3 | `tests/modules/auth/test_service.py` | Unit | 34/34 baseline | Focused collection failed because auth exceptions/service did not exist | Paired task 3.4 passed | Register/duplicate, active/wrong/unknown/inactive login, active/unknown/inactive identity | External functions patched at service boundary; 18/18 passed |
 | 3.4 | Auth service tests above | Unit | 34/34 baseline | Covered by task 3.3 RED | Registration, token login, and identity resolution passed | Unknown email performs dummy verification; inactive status is checked only after valid password | One-way `auth -> users` dependency preserved; 18/18 passed |
 | 3.5 | `tests/modules/auth/test_dependencies.py` | Unit/integration | 34/34 baseline | Focused collection failed because bearer dependency did not exist | Missing, invalid, valid, unknown, and inactive cases passed | Missing, malformed, expired, unknown, inactive, and successful identity paths | Shared credential exception helper and `Never` return clarify fail-closed flow; 19/19 passed |
+| 4.1 | `tests/modules/auth/test_router.py` | HTTP integration | 53/53 baseline | Collection failed because auth router did not exist | Register, login, and `/me` HTTP contracts passed | 201/409/422, OAuth2 200/401/403, safe profile, missing and invalid bearer paths | Name cases moved from users tests without losing boundary/Unicode coverage; 17/17 passed |
+| 4.2 | `tests/modules/users/test_router.py` | HTTP integration | 53/53 baseline | New assertions required route ownership not yet implemented | Public list/detail and unavailable POST passed | Both public reads return without auth and legacy POST returns 405 | Creation-focused tests moved to auth; users tests now express read-only ownership |
+| 4.3 | Auth and users router tests above | HTTP integration | 53/53 baseline | Covered by tasks 4.1/4.2 RED | Auth router, users route removal, and main wiring passed | Every declared auth route plus preserved user reads exercised | Minimal router translation preserves service/domain boundaries; 17/17 passed |
+| 5.1 | All three focused suites | Unit/integration | 53/53 baseline | HTTP tests acted as approval coverage before obsolete passwordless code removal | Foundation 22/22, workflow 19/19, HTTP 17/17 | All prior slices remained green after removing `UserCreate` and `create_user` | One-way `auth -> users` preserved and dead creation contract removed |
+| 5.2 | Full suite and runtime harnesses | Integration | 53/53 baseline | N/A: verification task, no new production behavior | Full suite, Ruff, import, HTTP/PostgreSQL and Alembic passed | Triangulation skipped: task executes established verification matrix | No production refactor after final evidence |
 
 ## Test Summary
 
@@ -54,6 +65,10 @@
 - Unit 2 focused GREEN: `18 passed in 0.99s`
 - Unit 2 focused post-refactor: `19 passed in 1.41s`
 - Unit 2 full compatibility suite: `53 passed in 2.54s`
+- Unit 3 initial RED: auth router import failed during collection
+- Unit 3 focused GREEN: `17 passed in 0.91s`; final rerun `17 passed in 0.95s`
+- Unit 3 post-refactor suites: foundation `22 passed`, workflows `19 passed`, HTTP `17 passed`
+- Final full compatibility suite: `60 passed in 1.35s`
 - Layers used: unit and migration integration
 - Approval tests: none; existing name behavior was preserved through its current tests
 - Pure/bounded helpers created: password hash/verify, dummy verify, JWT encode/decode
@@ -79,6 +94,19 @@
 | Import | With process-local `JWT_SECRET`: `import app.main` -> OK |
 | Rollback boundary | Revert credential primitives in `app/modules/users/service.py`, `app/modules/auth/{exceptions,service,dependencies}.py`, and their three focused test files. Foundation, routers, `app/main.py`, and database schema remain intact. |
 
+## Work Unit 3 Evidence
+
+| Evidence | Result |
+|---|---|
+| Focused test | `.\.venv\Scripts\python.exe -m pytest tests/modules/auth/test_router.py tests/modules/users/test_router.py -q` -> final rerun 17 passed in 0.95s |
+| Cross-slice focused tests | Foundation 22 passed; workflows 19 passed; HTTP integration 17 passed after refactor |
+| Full suite | `.\.venv\Scripts\python.exe -m pytest -q` -> final rerun 60 passed in 1.35s |
+| Runtime HTTP/PostgreSQL | Real `TestClient` plus local PostgreSQL registered a normalized account, rejected wrong credentials with 401, logged in with OAuth2 form, resolved `/auth/me`, preserved both public user reads, returned 405 for `POST /users`, rejected valid inactive credentials with 403, and deleted the exact harness account -> all expected statuses passed |
+| Migration harness | Starting at `b73c6cb6e54a (head)`: upgrade head (no-op), downgrade to `3e81fa4d59d2`, upgrade to `b73c6cb6e54a`, final current `b73c6cb6e54a (head)` on local PostgreSQL |
+| Static quality | `.\.venv\Scripts\ruff.exe check app tests alembic` -> All checks passed |
+| Import | With process-local `JWT_SECRET`: `import app.main` -> OK |
+| Rollback boundary | Revert `app/modules/auth/router.py`, auth router inclusion in `app/main.py`, restore the prior users POST route and its temporary passwordless service/schema only if reverting the entire auth ownership change, and revert the moved HTTP/schema tests. Foundation and workflow slices remain independently revertible. |
+
 ## Migration Review
 
 The database was confirmed empty before planning. The upgrade adds
@@ -98,7 +126,12 @@ imports the user model, so no discovery change was necessary.
 - Unit 2 introduced no design deviation. Dependencies form the HTTP-aware
   authentication boundary and translate domain failures to Spanish 401/403;
   services remain independent of HTTP.
+- Unit 3 introduced no design deviation. The runtime harness used FastAPI's
+  in-process ASGI client with the real PostgreSQL session rather than a separate
+  Uvicorn process; it exercised the complete application routing/dependency
+  stack and persisted/cleaned a real account.
 
 ## Remaining Tasks
 
-Tasks 4.1 through 5.2 remain pending for HTTP integration and final verification.
+All 17 implementation tasks are complete. The change is ready for `sdd-verify`;
+no verify report or archive was created during apply.

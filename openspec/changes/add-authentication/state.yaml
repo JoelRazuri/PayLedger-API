@@ -1,5 +1,5 @@
 change: add-authentication
-status: apply
+status: verify
 delivery_strategy: auto-chain
 chain_strategy: stacked-to-main
 phases:
@@ -8,6 +8,6 @@ phases:
   specs: complete
   design: complete
   tasks: complete
-  apply: in-progress
+  apply: complete
   verify: pending
   archive: pending

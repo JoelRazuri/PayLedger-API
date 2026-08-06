@@ -1,35 +1,52 @@
-import pytest
+from datetime import UTC, datetime
+from unittest.mock import MagicMock
+
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.modules.users import router as users_router
+from app.modules.users.model import User
 
 client = TestClient(app)
 
 
-@pytest.mark.parametrize(
-    ("full_name", "expected_message"),
-    [
-        ("", "El nombre completo debe tener al menos 2 caracteres"),
-        ("   ", "El nombre completo debe tener al menos 2 caracteres"),
-        ("A", "El nombre completo debe tener al menos 2 caracteres"),
-        ("x" * 256, "El nombre completo no puede superar los 255 caracteres"),
-    ],
-)
-def test_create_user_rejects_invalid_full_name(
-    monkeypatch: pytest.MonkeyPatch,
-    full_name: str,
-    expected_message: str,
-) -> None:
-    def fail_if_service_is_called(*args: object, **kwargs: object) -> None:
-        raise AssertionError("El service no debe recibir un nombre inválido")
+def test_get_users_remains_public(monkeypatch) -> None:
+    monkeypatch.setattr(users_router, "get_users", MagicMock(return_value=[]))
 
-    monkeypatch.setattr(users_router, "create_user", fail_if_service_is_called)
+    response = client.get("/users")
 
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_user_remains_public(monkeypatch) -> None:
+    timestamp = datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
+    user = User(
+        id=7,
+        email="ana@example.com",
+        full_name="Ana Pérez",
+        hashed_password="argon2-hash",
+        is_active=True,
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    monkeypatch.setattr(users_router, "get_user", MagicMock(return_value=user))
+
+    response = client.get("/users/7")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == 7
+    assert "hashed_password" not in response.text
+
+
+def test_post_users_is_not_available() -> None:
     response = client.post(
         "/users",
-        json={"email": "ana@example.com", "full_name": full_name},
+        json={
+            "email": "ana@example.com",
+            "full_name": "Ana Pérez",
+            "password": "plain-password",
+        },
     )
 
-    assert response.status_code == 422
-    assert expected_message in response.text
+    assert response.status_code == 405
