@@ -45,9 +45,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: HTTP Integration (PR4)
 
-- [ ] 4.1 **RED**: add tests/modules/payments/test_router.py for Unauthenticated, Create/Replay, filters, and Spanish 404/409/422 mappings including foreign process/cancel.
-- [ ] 4.2 **GREEN**: create app/modules/payments/router.py, inject user/key/provider dependencies, register it in app/main.py, and expose only specified endpoints.
-- [ ] 4.3 **REFACTOR**: keep FastAPI concerns in the router and services framework-free.
+- [x] 4.1 **RED**: add tests/modules/payments/test_router.py for Unauthenticated, Create/Replay, filters, and Spanish 404/409/422 mappings including foreign process/cancel.
+- [x] 4.2 **GREEN**: create app/modules/payments/router.py, inject user/key/provider dependencies, register it in app/main.py, and expose only specified endpoints.
+- [x] 4.3 **REFACTOR**: keep FastAPI concerns in the router and services framework-free.
 
 ## Phase 5: Final Evidence
 

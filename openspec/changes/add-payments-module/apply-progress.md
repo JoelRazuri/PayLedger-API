@@ -11,6 +11,9 @@
 - [x] 3.1 RED: provider and lifecycle service tests
 - [x] 3.2 GREEN: sandbox provider and atomic processing/cancellation
 - [x] 3.3 REFACTOR: isolated controlled provider-result persistence
+- [x] 4.1 RED: authenticated payment HTTP endpoint tests
+- [x] 4.2 GREEN: payment router, dependency injection, and application registration
+- [x] 4.3 REFACTOR: framework-free service boundary and router error mapping
 
 ## TDD Cycle Evidence
 
@@ -25,6 +28,9 @@
 | 3.1 | `tests/modules/payments/test_provider.py`, `tests/modules/payments/test_service.py` | Unit | 7/7 service baseline before extension | `pytest` exit 1: missing provider module and state conflict error | Covered by 3.2 GREEN | Provider success/rejection/failure plus process, cancel, conflict, and interruption paths | Preserved through 3.3 |
 | 3.2 | Same files | Unit | N/A (new provider file) | Covered by 3.1 RED | `pytest` exit 0, 14 passed | Deterministic sandbox outcomes and two competing lifecycle actions use distinct paths | Services remain framework-free |
 | 3.3 | Same files | Unit | 14/14 focused before refactor | Existing RED scenarios preserved | `pytest` exit 0, 14 passed after refactor | Provider response lacks raw payload and controlled metadata is asserted | Extracted `_complete_processing` around the controlled mapping |
+| 4.1 | `tests/modules/payments/test_router.py` | HTTP | N/A (new file) | `pytest` exit 1: payment router import absent | Covered by 4.2 GREEN | Seven cases cover auth, create/replay, validation, filters, ownership-safe lookup, and action error mapping | Preserved through 4.3 |
+| 4.2 | Same file | HTTP | Dependency-overridden FastAPI app | Covered by 4.1 RED | `pytest` exit 0, 7 passed | HTTPX ASGI runtime exercised create/list/get/process/cancel as 201/200/200/200/200 | Router owns FastAPI dependencies; service remains framework-free |
+| 4.3 | Same file | HTTP | 7/7 focused before refactor | Existing RED scenarios preserved | `pytest` exit 0, 7 passed after Ruff normalization | Spanish 404/409 errors and automatic validation 422 remain covered | Consolidated HTTP error construction without moving transport concerns into the service |
 
 ## Work Unit Evidence
 
@@ -41,6 +47,10 @@
 | PR3 focused test command | `./.venv/Scripts/python.exe -m pytest tests/modules/payments/test_provider.py tests/modules/payments/test_service.py` - exit 0, 14 passed |
 | PR3 runtime harness | Disposable PostgreSQL process/cancel race - exit 0; process committed `processing` before its provider call, cancel received a state conflict, and process completed the payment |
 | PR3 cleanup / rollback | Generated `payledger_pr3_<uuid>` database was terminated and dropped. Revert provider/lifecycle service changes and provider/service tests; no schema or migration rollback is required. |
+| PR4 focused test command | `./.venv/Scripts/python.exe -m pytest tests/modules/payments/test_router.py` - exit 0, 7 passed |
+| PR4 quality and full safety net | `./.venv/Scripts/python.exe -m ruff check .` - exit 0; `./.venv/Scripts/python.exe -m pytest` - exit 0, 96 passed |
+| PR4 runtime harness | HTTPX `ASGITransport` with FastAPI dependency overrides - exit 0; create/list/get/process/cancel/validation returned 201/200/200/200/200/422 |
+| PR4 rollback | Revert `app/modules/payments/router.py`, the payments import/registration in `app/main.py`, and `tests/modules/payments/test_router.py`; no schema or migration rollback is required. |
 
 ## Workload / PR Boundary
 
@@ -50,6 +60,7 @@
 - Authorized rescope: the 709-line native delivery block was split into PR1A (399 lines) and PR1B (250 lines), both below 400 changed lines.
 - Current work unit: PR2 creation and discovery, 286 authored changed lines across service, exceptions, and service tests.
 - Current work unit: PR3 provider processing/lifecycle, 245 authored changed lines across provider, service, exceptions, and tests.
+- Current work unit: PR4 HTTP integration, 338 changed lines across router, application registration, router tests, and SDD progress artifacts (under the 400-line budget).
 
 ## Deviations and Issues
 
@@ -57,8 +68,8 @@
 - The first disposable-harness attempt passed a URL reconstructed by SQLAlchemy into Alembic and hit password interpolation. The retry preserved the configured raw URL while changing only the generated database name; it passed and cleaned up the disposable database. No production configuration changed.
 - PR2 matches the approved design; no HTTP, provider, lifecycle, or migration behavior was added.
 - PR3 matches the approved design; no router, application registration, or migration behavior was added.
+- PR4 maps service-owned not-found and state/idempotency conflicts to approved Spanish HTTP responses; the router localizes payment validation failures as Spanish 422 details.
 
 ## Remaining Tasks
 
-- [ ] 4.1-4.3 HTTP Integration (PR4)
 - [ ] 5.1-5.2 Final Evidence
