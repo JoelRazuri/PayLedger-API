@@ -39,9 +39,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Processing (PR3)
 
-- [ ] 3.1 **RED**: add tests/modules/payments/test_provider.py and service tests for Outcomes, Concurrency, Stranded claim, Cancel, Invalid action, and Controlled results.
-- [ ] 3.2 **GREEN**: create app/modules/payments/provider.py protocol/sandbox adapter; add conditional claim, terminal persistence, and safe result mapping to service.py.
-- [ ] 3.3 **REFACTOR**: isolate provider-result mapping; prove no raw payload persists or is exposed.
+- [x] 3.1 **RED**: add tests/modules/payments/test_provider.py and service tests for Outcomes, Concurrency, Stranded claim, Cancel, Invalid action, and Controlled results.
+- [x] 3.2 **GREEN**: create app/modules/payments/provider.py protocol/sandbox adapter; add conditional claim, terminal persistence, and safe result mapping to service.py.
+- [x] 3.3 **REFACTOR**: isolate provider-result mapping; prove no raw payload persists or is exposed.
 
 ## Phase 4: HTTP Integration (PR4)
 
