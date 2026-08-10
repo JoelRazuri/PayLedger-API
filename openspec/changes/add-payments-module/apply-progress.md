@@ -14,6 +14,8 @@
 - [x] 4.1 RED: authenticated payment HTTP endpoint tests
 - [x] 4.2 GREEN: payment router, dependency injection, and application registration
 - [x] 4.3 REFACTOR: framework-free service boundary and router error mapping
+- [x] 5.1 Final test, lint, and application-import evidence
+- [x] 5.2 Disposable PostgreSQL migration reversal evidence
 
 ## TDD Cycle Evidence
 
@@ -31,6 +33,8 @@
 | 4.1 | `tests/modules/payments/test_router.py` | HTTP | N/A (new file) | `pytest` exit 1: payment router import absent | Covered by 4.2 GREEN | Seven cases cover auth, create/replay, validation, filters, ownership-safe lookup, and action error mapping | Preserved through 4.3 |
 | 4.2 | Same file | HTTP | Dependency-overridden FastAPI app | Covered by 4.1 RED | `pytest` exit 0, 7 passed | HTTPX ASGI runtime exercised create/list/get/process/cancel as 201/200/200/200/200 | Router owns FastAPI dependencies; service remains framework-free |
 | 4.3 | Same file | HTTP | 7/7 focused before refactor | Existing RED scenarios preserved | `pytest` exit 0, 7 passed after Ruff normalization | Spanish 404/409 errors and automatic validation 422 remain covered | Consolidated HTTP error construction without moving transport concerns into the service |
+| 5.1 | Existing suite | Verification | N/A: evidence-only, no source edit | N/A by assigned scope | `pytest` exit 0, 96 passed; Ruff and `import app.main` exit 0 | Independent full test, lint, and import checks | None needed |
+| 5.2 | Existing migration tests | PostgreSQL integration | N/A: evidence-only, no source edit | N/A by assigned scope | Disposable `upgrade/downgrade/upgrade` exit 0 | Payment enums, table, and four indexes absent after downgrade and recreated after upgrade | None needed |
 
 ## Work Unit Evidence
 
@@ -51,6 +55,9 @@
 | PR4 quality and full safety net | `./.venv/Scripts/python.exe -m ruff check .` - exit 0; `./.venv/Scripts/python.exe -m pytest` - exit 0, 96 passed |
 | PR4 runtime harness | HTTPX `ASGITransport` with FastAPI dependency overrides - exit 0; create/list/get/process/cancel/validation returned 201/200/200/200/200/422 |
 | PR4 rollback | Revert `app/modules/payments/router.py`, the payments import/registration in `app/main.py`, and `tests/modules/payments/test_router.py`; no schema or migration rollback is required. |
+| Final evidence commands | `./.venv/Scripts/python.exe -m pytest` - exit 0, 96 passed; `./.venv/Scripts/python.exe -m ruff check app tests alembic` - exit 0; `./.venv/Scripts/python.exe -c "import app.main"` - exit 0. |
+| Final migration runtime / cleanup | Generated database ran `upgrade head -> downgrade b73c6cb6e54a -> upgrade head` - exit 0; asserted payment enums/table/four indexes removed then recreated; terminated sessions and dropped it in `finally`. |
+| Final rollback | Evidence-only artifact changes: revert the two Phase 5 checkboxes and the final-evidence lines in this progress file. |
 
 ## Workload / PR Boundary
 
@@ -61,6 +68,7 @@
 - Current work unit: PR2 creation and discovery, 286 authored changed lines across service, exceptions, and service tests.
 - Current work unit: PR3 provider processing/lifecycle, 245 authored changed lines across provider, service, exceptions, and tests.
 - Current work unit: PR4 HTTP integration, 338 changed lines across router, application registration, router tests, and SDD progress artifacts (under the 400-line budget).
+- Current work unit: final evidence, artifact-only verification record; no product behavior changed.
 
 ## Deviations and Issues
 
@@ -72,4 +80,4 @@
 
 ## Remaining Tasks
 
-- [ ] 5.1-5.2 Final Evidence
+None.

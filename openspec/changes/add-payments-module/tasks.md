@@ -51,5 +51,5 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: Final Evidence
 
-- [ ] 5.1 Run .\.venv\Scripts\python.exe -m pytest, .\.venv\Scripts\python.exe -m ruff check app tests alembic, and .\.venv\Scripts\python.exe -c "import app.main".
-- [ ] 5.2 Set DATABASE_URL to a disposable PostgreSQL database; run .\.venv\Scripts\alembic.exe upgrade head, downgrade b73c6cb6e54a, then upgrade head; assert payment enums/table/indexes remove and recreate.
+- [x] 5.1 Run .\.venv\Scripts\python.exe -m pytest, .\.venv\Scripts\python.exe -m ruff check app tests alembic, and .\.venv\Scripts\python.exe -c "import app.main".
+- [x] 5.2 Set DATABASE_URL to a disposable PostgreSQL database; run .\.venv\Scripts\alembic.exe upgrade head, downgrade b73c6cb6e54a, then upgrade head; assert payment enums/table/indexes remove and recreate.
