@@ -6,6 +6,23 @@ PayLedger API es un backend desarrollado con FastAPI para registrar pagos, movim
 
 La aplicación no recibe ni transfiere dinero. Su función es registrar las operaciones realizadas en el sistema, consultar o recibir información de proveedores externos de pago y verificar que ambas fuentes coincidan.
 
+### Rol financiero de PayLedger
+
+PayLedger representa una plataforma de control financiero contratada por
+empresas para registrar sus operaciones, mantener un ledger interno y
+conciliarlas contra información proveniente de bancos, proveedores y
+procesadores externos simulados.
+
+No es un banco, una billetera ni custodia o transfiere dinero real. Los importes
+se originan en la empresa cliente y en sus sistemas externos. PayLedger conserva
+una representación de esas operaciones para aportar trazabilidad, clasificación
+contable, comparación y detección de diferencias.
+
+Esta perspectiva determina cómo deben interpretarse las cuentas, los débitos y
+los créditos del módulo Ledger. Payments describe la operación informada por la
+empresa; Ledger registra su impacto contable interno; Reconciliation compara
+esos registros con la fuente externa correspondiente.
+
 Ejemplos de proveedores externos:
 
 - Mercado Pago
