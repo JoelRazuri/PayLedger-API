@@ -38,9 +38,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Read-only API (PR 3)
 
-- [ ] 3.1 **RED threat tests:** add tests/modules/ledger/test_{schema,router}.py for every GET, missing/invalid JWT 401, unknown/foreign journal/payment 404, invalid limit/offset/currency/account 422, and POST/PATCH/DELETE 405.
-- [ ] 3.2 **GREEN:** add app/modules/ledger/{schema,router}.py and register in app/main.py; implement owner joins, EXISTS account filter, distinct newest (occurred_at,id) ordering, and pagination.
-- [ ] 3.3 **REFACTOR/evidence:** run Unit 3 tests; manually verify Swagger owner and foreign-token reads plus absent mutation before feat(ledger): expose read-only journals.
+- [x] 3.1 **RED threat tests:** add tests/modules/ledger/test_{schema,router}.py for every GET, missing/invalid JWT 401, unknown/foreign journal/payment 404, invalid limit/offset/currency/account 422, and POST/PATCH/DELETE 405.
+- [x] 3.2 **GREEN:** add app/modules/ledger/{schema,router}.py and register in app/main.py; implement owner joins, EXISTS account filter, distinct newest (occurred_at,id) ordering, and pagination.
+- [x] 3.3 **REFACTOR/evidence:** run Unit 3 tests; manually verify Swagger owner and foreign-token reads plus absent mutation before feat(ledger): expose read-only journals.
 
 ## Phase 4: Closure
 
