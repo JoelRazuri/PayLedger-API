@@ -32,9 +32,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Atomic completion (PR 2)
 
-- [ ] 2.1 **RED:** add tests/modules/payments/test_{provider,service}.py, tests/modules/ledger/test_service.py, and tests/integration/test_ledger_postgres.py for frozen ID input/no Session transaction during provider I/O, unchanged sandbox outcomes, success journal, non-success absence, local posting rollback to processing, and two-session convergence.
-- [ ] 2.2 **GREEN:** add app/modules/ledger/{exceptions,service}.py; change app/modules/payments/{provider,service}.py to claim/capture ID, lock/reload, flush two postings, and commit/rollback once.
-- [ ] 2.3 **REFACTOR/evidence:** run Unit 2 tests; manually process sandbox success and inspect postings before feat(payments): journal completed payments atomically.
+- [x] 2.1 **RED:** add tests/modules/payments/test_{provider,service}.py, tests/modules/ledger/test_service.py, and tests/integration/test_ledger_postgres.py for frozen ID input/no Session transaction during provider I/O, unchanged sandbox outcomes, success journal, non-success absence, local posting rollback to processing, and two-session convergence.
+- [x] 2.2 **GREEN:** add app/modules/ledger/{exceptions,service}.py; change app/modules/payments/{provider,service}.py to claim/capture ID, lock/reload, flush two postings, and commit/rollback once.
+- [x] 2.3 **REFACTOR/evidence:** run Unit 2 automated tests and PostgreSQL runtime harness; defer the user manual end-to-end sandbox verification to the final Phase 4 gate before closure.
 
 ## Phase 3: Read-only API (PR 3)
 
@@ -44,5 +44,5 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Closure
 
-- [ ] 4.1 Run full pytest, ruff check app tests, import check, migration cycle, and final Swagger verification; record results.
+- [ ] 4.1 Run full pytest, ruff check app tests, import check, migration cycle, and final Swagger plus user manual end-to-end verification; record results.
 - [ ] 4.2 After final verification, move the completed directory to openspec/changes/archive/YYYY-MM-DD-add-ledger-module using the latest related commit date.

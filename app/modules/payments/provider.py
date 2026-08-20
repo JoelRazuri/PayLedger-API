@@ -2,7 +2,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.modules.payments.enums import PaymentProcessScenario, PaymentStatus
-from app.modules.payments.model import Payment
+
+
+@dataclass(frozen=True)
+class PaymentProviderInput:
+    payment_id: int
 
 
 @dataclass(frozen=True)
@@ -16,7 +20,7 @@ class ProviderResult:
 class PaymentProvider(Protocol):
     def process(
         self,
-        payment: Payment,
+        input: PaymentProviderInput,
         scenario: PaymentProcessScenario,
     ) -> ProviderResult: ...
 
@@ -24,13 +28,13 @@ class PaymentProvider(Protocol):
 class SandboxPaymentProvider:
     def process(
         self,
-        payment: Payment,
+        input: PaymentProviderInput,
         scenario: PaymentProcessScenario,
     ) -> ProviderResult:
         if scenario is PaymentProcessScenario.SUCCESS:
             return ProviderResult(
                 status=PaymentStatus.COMPLETED,
-                provider_payment_id=f"sandbox-{payment.id}",
+                provider_payment_id=f"sandbox-{input.payment_id}",
             )
         if scenario is PaymentProcessScenario.BUSINESS_REJECTION:
             return ProviderResult(

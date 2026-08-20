@@ -17,7 +17,7 @@ from app.modules.payments.exceptions import (
     PaymentStateConflictError,
 )
 from app.modules.payments.model import Payment
-from app.modules.payments.provider import ProviderResult
+from app.modules.payments.provider import PaymentProviderInput, ProviderResult
 from app.modules.payments.schema import PaymentCreate, PaymentListQuery
 from app.modules.payments.service import (
     cancel_payment,
@@ -168,7 +168,11 @@ def test_process_claims_then_persists_controlled_provider_result() -> None:
     pending = Payment(id=4, owner_id=7, status=PaymentStatus.PENDING)
     claimed = Payment(id=4, owner_id=7, status=PaymentStatus.PROCESSING)
     db.query.return_value.filter.return_value.first.return_value = pending
-    db.execute.return_value.scalar_one_or_none.return_value = claimed
+    claim_result = MagicMock()
+    claim_result.scalar_one_or_none.return_value = 4
+    finalization_result = MagicMock()
+    finalization_result.scalar_one_or_none.return_value = claimed
+    db.execute.side_effect = [claim_result, finalization_result]
     provider = MagicMock()
     provider.process.return_value = ProviderResult(
         status=PaymentStatus.REJECTED,
@@ -188,7 +192,7 @@ def test_process_claims_then_persists_controlled_provider_result() -> None:
     assert payment.failure_code == "business_rejection"
     assert payment.processed_at is not None
     provider.process.assert_called_once_with(
-        claimed,
+        PaymentProviderInput(payment_id=4),
         PaymentProcessScenario.BUSINESS_REJECTION,
     )
     assert db.commit.call_count == 2

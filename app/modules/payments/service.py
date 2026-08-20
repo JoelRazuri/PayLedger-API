@@ -3,10 +3,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.modules.ledger.enums import LedgerEventType
+from app.modules.ledger.model import JournalEntry
+from app.modules.ledger.service import record_completed_payment
 from app.modules.payments.enums import PaymentProcessScenario, PaymentStatus
 from app.modules.payments.exceptions import (
     PaymentIdempotencyConflictError,
@@ -14,7 +17,11 @@ from app.modules.payments.exceptions import (
     PaymentStateConflictError,
 )
 from app.modules.payments.model import Payment
-from app.modules.payments.provider import PaymentProvider, ProviderResult
+from app.modules.payments.provider import (
+    PaymentProvider,
+    PaymentProviderInput,
+    ProviderResult,
+)
 from app.modules.payments.schema import PaymentCreate, PaymentListQuery
 
 
@@ -109,16 +116,17 @@ def process_payment(
     provider: PaymentProvider,
 ) -> Payment:
     get_payment(db, owner_id, payment_id)
-    payment = _claim_pending(db, owner_id, payment_id, PaymentStatus.PROCESSING)
-    result = provider.process(payment, scenario)
-    return _complete_processing(db, payment, result)
+    provider_input = _claim_pending(
+        db, owner_id, payment_id, PaymentStatus.PROCESSING
+    )
+    result = provider.process(provider_input, scenario)
+    return _complete_processing(db, owner_id, provider_input.payment_id, result)
 
 
 def cancel_payment(db: Session, owner_id: int, payment_id: int) -> Payment:
     get_payment(db, owner_id, payment_id)
-    payment = _claim_pending(db, owner_id, payment_id, PaymentStatus.CANCELLED)
-    db.refresh(payment)
-    return payment
+    claimed = _claim_pending(db, owner_id, payment_id, PaymentStatus.CANCELLED)
+    return get_payment(db, owner_id, claimed.payment_id)
 
 
 def _find_by_key(db: Session, owner_id: int, key: str) -> Payment | None:
@@ -155,8 +163,8 @@ def _claim_pending(
     owner_id: int,
     payment_id: int,
     target_status: PaymentStatus,
-) -> Payment:
-    payment = db.execute(
+) -> PaymentProviderInput:
+    claimed_id = db.execute(
         update(Payment)
         .where(
             Payment.id == payment_id,
@@ -164,12 +172,12 @@ def _claim_pending(
             Payment.status == PaymentStatus.PENDING,
         )
         .values(status=target_status)
-        .returning(Payment)
+        .returning(Payment.id)
     ).scalar_one_or_none()
-    if payment is None:
+    if claimed_id is None:
         raise PaymentStateConflictError
     db.commit()
-    return payment
+    return PaymentProviderInput(payment_id=claimed_id)
 
 
 def _apply_provider_result(payment: Payment, result: ProviderResult) -> None:
@@ -182,10 +190,48 @@ def _apply_provider_result(payment: Payment, result: ProviderResult) -> None:
 
 def _complete_processing(
     db: Session,
-    payment: Payment,
+    owner_id: int,
+    payment_id: int,
     result: ProviderResult,
 ) -> Payment:
-    _apply_provider_result(payment, result)
-    db.commit()
+    try:
+        payment = db.execute(
+            select(Payment)
+            .where(Payment.id == payment_id, Payment.owner_id == owner_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if payment is None:
+            raise PaymentStateConflictError
+        if payment.status is PaymentStatus.COMPLETED:
+            if result.status is PaymentStatus.COMPLETED and _completed_journal_exists(
+                db, payment.id
+            ):
+                db.commit()
+                db.refresh(payment)
+                db.commit()
+                return payment
+            raise PaymentStateConflictError
+        if payment.status is not PaymentStatus.PROCESSING:
+            raise PaymentStateConflictError
+
+        _apply_provider_result(payment, result)
+        if result.status is PaymentStatus.COMPLETED:
+            record_completed_payment(db, payment)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(payment)
     return payment
+
+
+def _completed_journal_exists(db: Session, payment_id: int) -> bool:
+    return (
+        db.scalar(
+            select(JournalEntry.id).where(
+                JournalEntry.payment_id == payment_id,
+                JournalEntry.event_type == LedgerEventType.PAYMENT_COMPLETED,
+            )
+        )
+        is not None
+    )

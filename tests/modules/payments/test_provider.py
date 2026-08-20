@@ -1,8 +1,7 @@
 import pytest
 
 from app.modules.payments.enums import PaymentProcessScenario, PaymentStatus
-from app.modules.payments.model import Payment
-from app.modules.payments.provider import SandboxPaymentProvider
+from app.modules.payments.provider import PaymentProviderInput, SandboxPaymentProvider
 
 
 @pytest.mark.parametrize(
@@ -34,10 +33,20 @@ def test_sandbox_provider_returns_only_controlled_outcomes(
     provider_id: str | None,
     failure_code: str | None,
 ) -> None:
-    result = SandboxPaymentProvider().process(Payment(id=8), scenario)
+    input = PaymentProviderInput(payment_id=8)
+
+    result = SandboxPaymentProvider().process(input, scenario)
 
     assert result.status is status
     assert result.provider_payment_id == provider_id
     assert result.failure_code == failure_code
     assert result.failure_message is None or "sandbox" in result.failure_message
     assert not hasattr(result, "raw_payload")
+
+
+def test_provider_input_is_a_frozen_scalar_snapshot() -> None:
+    input = PaymentProviderInput(payment_id=8)
+
+    assert input.payment_id == 8
+    with pytest.raises(AttributeError):
+        input.payment_id = 9
