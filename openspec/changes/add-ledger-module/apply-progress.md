@@ -11,10 +11,12 @@
 - [x] 3.1 RED: Ledger schema and read-only router threat tests
 - [x] 3.2 GREEN: owner-scoped journal queries, schemas, router, and application registration
 - [x] 3.3 REFACTOR/evidence: automated API/runtime evidence; manual end-to-end remains Phase 4
+- [x] 4.1 Closure evidence: full automated verification and user manual Swagger/end-to-end Ledger verification
 
-## Pending Tasks
+## Apply Status
 
-- [ ] 4.1-4.2 Closure
+- All implementation and apply/verification-precondition tasks are complete.
+- Next lifecycle action: run SDD Verify. After successful SDD Verify, perform post-verification workflow step 4.2 to archive the change.
 
 ## TDD Cycle Evidence
 
@@ -63,6 +65,18 @@
 | Manual end-to-end verification | Pending by explicit workflow decision: the user performs one complete sandbox/Swagger verification for the completed Ledger module in Phase 4. No manual success is claimed for Unit 3. |
 | Rollback boundary | Revert `app/modules/ledger/schema.py`, `app/modules/ledger/router.py`, the read-query additions in `app/modules/ledger/service.py`, `LedgerNotFoundError`, the Ledger router import/registration in `app/main.py`, and the three Unit 3 test files; this removes only the read-only API slice. |
 
+## Phase 4.1 Closure Evidence
+
+| Evidence | Result |
+|---|---|
+| Full test suite | `./.venv/Scripts/python.exe -m pytest` — exit 0, 132 passed |
+| Full lint | `./.venv/Scripts/python.exe -m ruff check app tests` — exit 0, all checks passed |
+| Import check | `./.venv/Scripts/python.exe -c "import app.main"` — exit 0, `app.main import passed` |
+| Disposable migration cycle | `./.venv/Scripts/python.exe -m pytest tests/alembic/test_ledger_migration.py` — exit 0, 2 passed; created and dropped a generated PostgreSQL database after `upgrade head -> downgrade base -> upgrade head`, including deferred-balance checks |
+| Automated TestClient smoke | Fresh disposable PostgreSQL database and `alembic upgrade head`; registered a user, logged in, created and processed an ARS payment with the sandbox provider, then read its completed Ledger journal — exit 0. The database was terminated and dropped in `finally`. |
+| Harness setup note | The initial smoke fixture used the reserved `.test` email domain and correctly received registration `422` from email validation. The fixture was changed to `example.com`; this was harness-only and no candidate source changed. |
+| User manual Swagger/end-to-end verification | **Passed, user-reported.** The complete Swagger/end-to-end plan worked: a completed payment generated a balanced journal; owner isolation, filters/pagination, and read-only behavior all worked. |
+
 ## Workload / PR Boundary
 
 - Delivery mode: auto-chain / stacked-to-main.
@@ -76,3 +90,23 @@
 - Manual migration verification is recorded as complete; no production or test files changed during this evidence update.
 - No Phase 2 design deviation. The user explicitly postponed manual end-to-end testing until the complete Ledger module is implemented; Phase 2 closes only on automated PostgreSQL runtime evidence.
 - No Phase 3 design deviation. The explicit workflow defers manual Swagger/end-to-end verification to the single final Phase 4 gate, so Phase 3 closes only on automated API/runtime evidence.
+- Phase 4.1 is complete: automated evidence passed and the user reported that the complete Swagger/end-to-end Ledger plan worked. Archive step 4.2 is a post-verification lifecycle action and remains unperformed until SDD Verify succeeds.
+
+## Focused Remediation Evidence (V-001, V-002)
+
+- Scope: added runtime proof for the two verification blockers only. The existing `verify-report.md` remains an authoritative **FAIL** until SDD Verify is rerun; this evidence does not claim a replacement verdict.
+- Production correction: PostgreSQL retrieved `TIMESTAMPTZ` values in the session timezone (`America/Buenos_Aires`). Ledger retrieval services now normalize `occurred_at` and `created_at` to UTC before API exposure, preserving their instants.
+
+### Strict TDD Evidence
+
+- Safety net: `./.venv/Scripts/python.exe -m pytest tests/integration/test_ledger_postgres.py` â€” exit 0, 6 passed before edits.
+- RED: wrote both integration tests before production edits. V-001 was already green (coverage-only); V-002 exited 1 (7 passed, 1 failed) because retrieved `created_at.tzinfo` was `America/Buenos_Aires`, not `UTC`.
+- GREEN/refactor: normalized Ledger retrieval timestamps to UTC, then focused tests passed 8/8 and Ruff passed after formatting.
+
+### Work Unit Evidence
+
+| Evidence | Result |
+|---|---|
+| Focused/runtime | `./.venv/Scripts/python.exe -m pytest tests/integration/test_ledger_postgres.py` â€” exit 0, 8 passed; real disposable PostgreSQL proves cancellation has no journal and a fresh retrieval preserves the processed-time instant with UTC timestamps. |
+| Full/lint/import | Pytest: exit 0, 134 passed. Ruff `check app tests`: exit 0. `import app.main`: exit 0. |
+| Rollback | Revert `tests/integration/test_ledger_postgres.py` and `app/modules/ledger/service.py`; only blocker coverage and Ledger API UTC normalization are removed. |

@@ -1,3 +1,5 @@
+from datetime import UTC
+
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -54,13 +56,14 @@ def list_journals(
                 LedgerEntry.account == filters.account,
             )
         )
-    return list(
+    journals = list(
         db.scalars(
             statement.order_by(JournalEntry.occurred_at.desc(), JournalEntry.id.desc())
             .offset(filters.offset)
             .limit(filters.limit)
         ).all()
     )
+    return [_normalize_journal_timestamps(journal) for journal in journals]
 
 
 def get_journal(db: Session, owner_id: int, journal_id: int) -> JournalEntry:
@@ -69,7 +72,7 @@ def get_journal(db: Session, owner_id: int, journal_id: int) -> JournalEntry:
     ).first()
     if journal is None:
         raise LedgerNotFoundError
-    return journal
+    return _normalize_journal_timestamps(journal)
 
 
 def get_payment_journal(db: Session, owner_id: int, payment_id: int) -> JournalEntry:
@@ -78,6 +81,12 @@ def get_payment_journal(db: Session, owner_id: int, payment_id: int) -> JournalE
     ).first()
     if journal is None:
         raise LedgerNotFoundError
+    return _normalize_journal_timestamps(journal)
+
+
+def _normalize_journal_timestamps(journal: JournalEntry) -> JournalEntry:
+    journal.occurred_at = journal.occurred_at.astimezone(UTC)
+    journal.created_at = journal.created_at.astimezone(UTC)
     return journal
 
 

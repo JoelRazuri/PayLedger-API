@@ -1,5 +1,6 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.ledger.enums import LedgerAccount, LedgerEntrySide
 from app.modules.ledger.model import JournalEntry
+from app.modules.ledger.service import get_payment_journal
 from app.modules.payments.enums import PaymentProcessScenario, PaymentStatus
 from app.modules.payments.exceptions import PaymentStateConflictError
 from app.modules.payments.provider import (
@@ -14,7 +16,11 @@ from app.modules.payments.provider import (
     ProviderResult,
     SandboxPaymentProvider,
 )
-from app.modules.payments.service import _complete_processing, process_payment
+from app.modules.payments.service import (
+    _complete_processing,
+    cancel_payment,
+    process_payment,
+)
 from tests.integration.test_payments_postgres import pending_payment, user
 
 pytest_plugins = ("tests.integration.test_payments_postgres",)
@@ -105,6 +111,45 @@ def test_non_success_finalization_creates_no_journal(
 
     assert result.status is expected_status
     assert journal is None
+
+
+def test_cancelled_payment_creates_no_journal(sessions) -> None:
+    with sessions() as db:
+        owner = user(db, 26)
+        payment = pending_payment(db, owner, "ledger-cancelled")
+        cancelled = cancel_payment(db, owner.id, payment.id)
+        journal = db.scalar(
+            select(JournalEntry).where(JournalEntry.payment_id == payment.id)
+        )
+
+    assert cancelled.status is PaymentStatus.CANCELLED
+    assert journal is None
+
+
+def test_retrieved_journal_normalizes_persisted_times_to_utc(sessions) -> None:
+    with sessions() as setup:
+        owner = user(setup, 27)
+        payment = pending_payment(setup, owner, "ledger-timestamps")
+        started_at = datetime.now(UTC)
+        process_payment(
+            setup,
+            owner.id,
+            payment.id,
+            PaymentProcessScenario.SUCCESS,
+            SandboxPaymentProvider(),
+        )
+        finished_at = datetime.now(UTC)
+        owner_id, payment_id = owner.id, payment.id
+
+    with sessions() as retrieved:
+        payment = retrieved.get(type(payment), payment_id)
+        journal = get_payment_journal(retrieved, owner_id, payment_id)
+
+    assert payment is not None
+    assert journal.occurred_at == payment.processed_at
+    assert journal.occurred_at.tzinfo is UTC
+    assert journal.created_at.tzinfo is UTC
+    assert started_at <= journal.created_at <= finished_at
 
 
 class PostingFailureProvider:

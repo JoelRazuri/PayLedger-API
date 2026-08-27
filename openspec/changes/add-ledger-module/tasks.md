@@ -44,5 +44,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Closure
 
-- [ ] 4.1 Run full pytest, ruff check app tests, import check, migration cycle, and final Swagger plus user manual end-to-end verification; record results.
-- [ ] 4.2 After final verification, move the completed directory to openspec/changes/archive/YYYY-MM-DD-add-ledger-module using the latest related commit date.
+- [x] 4.1 Run full pytest, ruff check app tests, import check, migration cycle, and final Swagger plus user manual end-to-end verification; record results.
+
+## Post-verification workflow
+
+- **4.2 Archive (not an implementation checkbox):** after SDD Verify succeeds, move the completed directory to `openspec/changes/archive/YYYY-MM-DD-add-ledger-module` using the latest related commit date.
