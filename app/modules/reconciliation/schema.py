@@ -4,6 +4,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 
 from app.modules.payments.enums import Currency, PaymentProvider, PaymentStatus
+from app.modules.reconciliation.enums import ReconciliationResult
 
 _TERMINAL_STATUSES = {
     PaymentStatus.COMPLETED,
@@ -65,4 +66,34 @@ class ExternalTransactionResponse(BaseModel):
     @field_validator("occurred_at", "received_at")
     @classmethod
     def normalize_response_time_to_utc(cls, value: datetime) -> datetime:
+        return value.astimezone(UTC)
+
+
+class ReconciliationListQuery(BaseModel):
+    limit: int = Field(default=20, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+    result: ReconciliationResult | None = None
+
+
+class ReconciliationResponse(BaseModel):
+    id: int
+    external_transaction_id: int
+    payment_id: int | None
+    result: ReconciliationResult
+    external_amount: Decimal
+    external_currency: Currency
+    external_status: PaymentStatus
+    local_amount: Decimal | None
+    local_currency: Currency | None
+    local_status: PaymentStatus | None
+    amount_matches: bool | None
+    currency_matches: bool | None
+    status_matches: bool | None
+    reconciled_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @field_validator("reconciled_at")
+    @classmethod
+    def normalize_reconciled_at_to_utc(cls, value: datetime) -> datetime:
         return value.astimezone(UTC)

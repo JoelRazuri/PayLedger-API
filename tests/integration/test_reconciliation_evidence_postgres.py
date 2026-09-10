@@ -8,15 +8,23 @@ from sqlalchemy import update
 
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
+from app.modules.payments.enums import (
+    Currency,
+    PaymentProvider,
+    PaymentStatus,
+    RecipientAccountType,
+)
+from app.modules.payments.model import Payment
 from app.modules.reconciliation import router as reconciliation_router
 from app.modules.reconciliation import service as reconciliation_service
-from app.modules.reconciliation.model import ExternalTransaction
+from app.modules.reconciliation.model import ExternalTransaction, Reconciliation
 from app.modules.reconciliation.schema import (
     ExternalTransactionCreate,
     ExternalTransactionListQuery,
 )
 from app.modules.reconciliation.service import (
     create_external_transaction,
+    create_reconciliation,
     list_external_transactions,
 )
 from tests.integration.test_payments_postgres import user
@@ -219,3 +227,210 @@ def test_postgresql_listing_is_received_time_then_id_descending(sessions) -> Non
         same_time_first.external_transaction.id,
         older.external_transaction.id,
     ]
+
+
+def test_two_postgresql_sessions_replay_one_same_key_reconciliation(
+    sessions, monkeypatch
+) -> None:
+    setup = sessions()
+    try:
+        owner = user(setup, 74)
+        payment = Payment(
+            owner_id=owner.id,
+            idempotency_key="reconciliation-payment",
+            request_fingerprint="f" * 64,
+            amount="12.50",
+            currency=Currency.ARS,
+            provider=PaymentProvider.STRIPE,
+            status=PaymentStatus.COMPLETED,
+            recipient_name="Ada Lovelace",
+            recipient_account_type=RecipientAccountType.BANK_ACCOUNT,
+            recipient_reference="CBU-123",
+            provider_payment_id="payment-race",
+        )
+        setup.add(payment)
+        setup.commit()
+        evidence = create_external_transaction(
+            setup,
+            owner.id,
+            _request("reconciliation-race", provider_payment_id="payment-race"),
+        )
+        owner_id = owner.id
+        external_id = evidence.external_transaction.id
+    finally:
+        setup.close()
+
+    original_get = reconciliation_service.get_external_transaction
+    initial_reads = threading.Barrier(2)
+
+    def synchronize_initial_reads(*args, **kwargs):
+        external = original_get(*args, **kwargs)
+        initial_reads.wait(timeout=5)
+        return external
+
+    monkeypatch.setattr(
+        reconciliation_service, "get_external_transaction", synchronize_initial_reads
+    )
+    first, second = sessions(), sessions()
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    create_reconciliation,
+                    db,
+                    owner_id,
+                    external_id,
+                    "same-reconciliation-key",
+                )
+                for db in (first, second)
+            ]
+            results = [future.result(timeout=10) for future in futures]
+    finally:
+        first.close()
+        second.close()
+
+    verifier = sessions()
+    try:
+        count = (
+            verifier.query(Reconciliation)
+            .filter(
+                Reconciliation.owner_id == owner_id,
+                Reconciliation.idempotency_key == "same-reconciliation-key",
+            )
+            .count()
+        )
+    finally:
+        verifier.close()
+
+    assert count == 1
+    assert {result.reconciliation.id for result in results} == {
+        results[0].reconciliation.id
+    }
+    assert sorted(result.replayed for result in results) == [False, True]
+
+
+def test_reconciliation_postgresql_runtime_proves_snapshots_queries_and_isolation(
+    sessions,
+) -> None:
+    db = sessions()
+    app = FastAPI()
+    app.include_router(reconciliation_router.router)
+    app.include_router(reconciliation_router.reconciliations_router)
+    try:
+        owner = user(db, 75)
+        foreign_owner = user(db, 76)
+        payments = [
+            Payment(
+                owner_id=owner.id,
+                idempotency_key=f"payment-{name}",
+                request_fingerprint="f" * 64,
+                amount="12.50",
+                currency=currency,
+                provider=PaymentProvider.STRIPE,
+                status=PaymentStatus.COMPLETED,
+                recipient_name="Ada Lovelace",
+                recipient_account_type=RecipientAccountType.BANK_ACCOUNT,
+                recipient_reference=f"CBU-{name}",
+                provider_payment_id=f"payment-{name}",
+            )
+            for name, currency in (("match", Currency.ARS), ("currency", Currency.USD))
+        ]
+        db.add_all(payments)
+        db.commit()
+        matched_external = create_external_transaction(
+            db,
+            owner.id,
+            _request("match", provider_payment_id="payment-match"),
+        )
+        currency_external = create_external_transaction(
+            db,
+            owner.id,
+            _request("currency", provider_payment_id="payment-currency"),
+        )
+        unmatched_external = create_external_transaction(
+            db,
+            owner.id,
+            _request("unmatched", provider_payment_id="payment-unmatched"),
+        )
+        foreign_external = create_external_transaction(
+            db,
+            foreign_owner.id,
+            _request("foreign", provider_payment_id="payment-foreign"),
+        )
+        matched = create_reconciliation(
+            db, owner.id, matched_external.external_transaction.id, "match-key"
+        )
+        currency = create_reconciliation(
+            db, owner.id, currency_external.external_transaction.id, "currency-key"
+        )
+        unmatched = create_reconciliation(
+            db, owner.id, unmatched_external.external_transaction.id, "unmatched-key"
+        )
+        foreign = create_reconciliation(
+            db,
+            foreign_owner.id,
+            foreign_external.external_transaction.id,
+            "foreign-key",
+        )
+        db.execute(
+            update(Reconciliation)
+            .where(
+                Reconciliation.id.in_(
+                    [
+                        matched.reconciliation.id,
+                        currency.reconciliation.id,
+                        unmatched.reconciliation.id,
+                    ]
+                )
+            )
+            .values(reconciled_at=datetime(2026, 9, 10, 18, 0, tzinfo=UTC))
+        )
+        db.commit()
+
+        app.dependency_overrides[get_current_user] = lambda: owner
+        app.dependency_overrides[get_db] = lambda: db
+        with TestClient(app) as client:
+            listed = client.get("/reconciliations?limit=20")
+            filtered = client.get("/reconciliations?result=mismatched&limit=1")
+            detail = client.get(f"/reconciliations/{matched.reconciliation.id}")
+            foreign_reconcile = client.post(
+                f"/external-transactions/{foreign_external.external_transaction.id}/reconcile",
+                headers={"Idempotency-Key": "foreign-attempt"},
+            )
+            foreign_detail = client.get(f"/reconciliations/{foreign.reconciliation.id}")
+    finally:
+        app.dependency_overrides.clear()
+        db.close()
+
+    assert (matched.reconciliation.result, currency.reconciliation.result) == (
+        "matched",
+        "mismatched",
+    )
+    assert (
+        matched.reconciliation.amount_matches,
+        matched.reconciliation.currency_matches,
+        matched.reconciliation.status_matches,
+    ) == (True, True, True)
+    assert (
+        currency.reconciliation.amount_matches,
+        currency.reconciliation.currency_matches,
+        currency.reconciliation.status_matches,
+    ) == (True, False, True)
+    assert (
+        unmatched.reconciliation.payment_id,
+        unmatched.reconciliation.local_amount,
+        unmatched.reconciliation.local_currency,
+        unmatched.reconciliation.local_status,
+        unmatched.reconciliation.amount_matches,
+        unmatched.reconciliation.currency_matches,
+        unmatched.reconciliation.status_matches,
+    ) == (None, None, None, None, None, None, None)
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [
+        unmatched.reconciliation.id,
+        currency.reconciliation.id,
+        matched.reconciliation.id,
+    ]
+    assert filtered.json()[0]["id"] == currency.reconciliation.id
+    assert detail.json()["reconciled_at"] == "2026-09-10T18:00:00Z"
+    assert (foreign_reconcile.status_code, foreign_detail.status_code) == (404, 404)

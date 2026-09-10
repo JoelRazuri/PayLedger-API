@@ -61,3 +61,21 @@ def test_external_transaction_list_query_enforces_page_bounds() -> None:
 
     with pytest.raises(ValidationError):
         ExternalTransactionListQuery(limit=101)
+
+
+def test_reconciliation_schemas_require_idempotency_and_filter_bounds() -> None:
+    from app.modules.reconciliation.schema import ReconciliationListQuery
+
+    assert ReconciliationListQuery().model_dump() == {
+        "limit": 20,
+        "offset": 0,
+        "result": None,
+    }
+    with pytest.raises(ValidationError):
+        ReconciliationListQuery(limit=101)
+    with pytest.raises(ValidationError):
+        ReconciliationListQuery(limit=0)
+    with pytest.raises(ValidationError):
+        ReconciliationListQuery(offset=-1)
+    with pytest.raises(ValidationError):
+        ReconciliationListQuery(result="unknown")

@@ -13,9 +13,14 @@ from app.modules.reconciliation import router as reconciliation_router
 from app.modules.reconciliation.exceptions import (
     ExternalTransactionConflictError,
     ExternalTransactionNotFoundError,
+    ReconciliationConflictError,
+    ReconciliationNotFoundError,
 )
-from app.modules.reconciliation.model import ExternalTransaction
-from app.modules.reconciliation.service import ExternalTransactionCreation
+from app.modules.reconciliation.model import ExternalTransaction, Reconciliation
+from app.modules.reconciliation.service import (
+    ExternalTransactionCreation,
+    ReconciliationCreation,
+)
 from app.modules.users.model import User
 
 
@@ -173,3 +178,153 @@ def test_create_evidence_rejects_timezone_naive_occurrence_at(client) -> None:
 
     assert response.status_code == 422
     assert response.json() == {"detail": "Solicitud inválida"}
+
+
+def reconciliation(
+    *,
+    identifier: int = 11,
+    external_transaction_id: int = 4,
+    payment_id: int | None = 9,
+    result: str = "matched",
+) -> Reconciliation:
+    return Reconciliation(
+        id=identifier,
+        owner_id=7,
+        external_transaction_id=external_transaction_id,
+        payment_id=payment_id,
+        idempotency_key=f"key-{identifier}",
+        external_amount=Decimal("12.50"),
+        external_currency=Currency.ARS,
+        external_status=PaymentStatus.COMPLETED,
+        local_amount=Decimal("12.50") if payment_id is not None else None,
+        local_currency=Currency.ARS if payment_id is not None else None,
+        local_status=PaymentStatus.COMPLETED if payment_id is not None else None,
+        result=result,
+        amount_matches=True if payment_id is not None else None,
+        currency_matches=True if payment_id is not None else None,
+        status_matches=True if payment_id is not None else None,
+        reconciled_at=datetime(2026, 9, 10, 15, 2, tzinfo=UTC),
+    )
+
+
+@pytest.fixture
+def reconciliation_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(reconciliation_router.router)
+    app.include_router(reconciliation_router.reconciliations_router)
+    app.dependency_overrides[get_current_user] = lambda: User(id=7)
+    app.dependency_overrides[get_db] = lambda: MagicMock()
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+def test_reconcile_route_requires_key_and_maps_foreign_or_unknown_to_404(
+    reconciliation_client, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        reconciliation_router,
+        "create_reconciliation",
+        MagicMock(side_effect=ExternalTransactionNotFoundError),
+    )
+    monkeypatch.setattr(
+        reconciliation_router,
+        "get_reconciliation",
+        MagicMock(side_effect=ReconciliationNotFoundError),
+    )
+
+    missing_key = reconciliation_client.post("/external-transactions/4/reconcile")
+    foreign = reconciliation_client.post(
+        "/external-transactions/99/reconcile", headers={"Idempotency-Key": "key"}
+    )
+    unknown = reconciliation_client.get("/reconciliations/99")
+
+    assert (missing_key.status_code, foreign.status_code, unknown.status_code) == (
+        422,
+        404,
+        404,
+    )
+
+
+def test_reconcile_route_replays_conflicts_and_appends_new_attempts(
+    reconciliation_client, monkeypatch
+) -> None:
+    first = reconciliation(identifier=11)
+    replay = reconciliation(identifier=11)
+    rerun = reconciliation(identifier=12)
+    create = MagicMock(
+        side_effect=[
+            ReconciliationCreation(first, replayed=False),
+            ReconciliationCreation(replay, replayed=True),
+            ReconciliationConflictError,
+            ReconciliationCreation(rerun, replayed=False),
+        ]
+    )
+    monkeypatch.setattr(reconciliation_router, "create_reconciliation", create)
+
+    created = reconciliation_client.post(
+        "/external-transactions/4/reconcile", headers={"Idempotency-Key": "first"}
+    )
+    same_key = reconciliation_client.post(
+        "/external-transactions/4/reconcile", headers={"Idempotency-Key": "first"}
+    )
+    reused_elsewhere = reconciliation_client.post(
+        "/external-transactions/5/reconcile", headers={"Idempotency-Key": "first"}
+    )
+    new_key = reconciliation_client.post(
+        "/external-transactions/4/reconcile", headers={"Idempotency-Key": "second"}
+    )
+
+    statuses = (
+        created.status_code,
+        same_key.status_code,
+        reused_elsewhere.status_code,
+    )
+    assert statuses == (
+        200,
+        200,
+        409,
+    )
+    assert (created.json()["id"], same_key.json()["id"], new_key.json()["id"]) == (
+        11,
+        11,
+        12,
+    )
+    assert create.call_args_list[0].args[1:] == (7, 4, "first")
+
+
+def test_reconciliation_query_routes_filter_page_and_are_immutable(
+    reconciliation_client, monkeypatch
+) -> None:
+    listed = reconciliation(identifier=11)
+    monkeypatch.setattr(
+        reconciliation_router, "list_reconciliations", MagicMock(return_value=[listed])
+    )
+
+    response = reconciliation_client.get("/reconciliations?result=matched&limit=1")
+    invalid = reconciliation_client.get("/reconciliations?result=invalid")
+    invalid_limit = reconciliation_client.get("/reconciliations?limit=101")
+    invalid_offset = reconciliation_client.get("/reconciliations?offset=-1")
+    methods = [
+        response
+        for path in ("/reconciliations", "/reconciliations/11")
+        for response in (
+            reconciliation_client.patch(path, json={"result": "mismatched"}),
+            reconciliation_client.put(path, json={"result": "mismatched"}),
+            reconciliation_client.delete(path),
+        )
+    ]
+
+    assert response.status_code == 200
+    assert response.json()[0]["reconciled_at"] == "2026-09-10T15:02:00Z"
+    invalid_statuses = (
+        invalid.status_code,
+        invalid_limit.status_code,
+        invalid_offset.status_code,
+    )
+    assert invalid_statuses == (
+        422,
+        422,
+        422,
+    )
+    assert [item.status_code for item in methods] == [405] * 6

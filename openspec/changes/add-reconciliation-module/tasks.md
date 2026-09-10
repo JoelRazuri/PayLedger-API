@@ -46,10 +46,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Reconciliation API (PR 3)
 
-- [ ] 3.1 RED: tests for missing `Idempotency-Key` (422), foreign/unknown reconcile IDs (404), key reuse 409, same-key replay, new-key append, and concurrent single-attempt behavior.
-- [ ] 3.2 RED: tests for matched flags, currency-only mismatch, unmatched null snapshots, immutable IDs, and newest-first result filtering/pagination.
-- [ ] 3.3 GREEN: implement reconciliation schemas, matching/snapshots, savepoint/named-constraint handling, list/detail queries, and action route.
-- [ ] 3.4 REFACTOR: enforce Decimal/enum comparisons, UTC normalization, and no mutation paths.
+- [x] 3.1 RED: tests for missing `Idempotency-Key` (422), foreign/unknown reconcile IDs (404), key reuse 409, same-key replay, new-key append, and concurrent single-attempt behavior.
+- [x] 3.2 RED: tests for matched flags, currency-only mismatch, unmatched null snapshots, immutable IDs, and newest-first result filtering/pagination.
+- [x] 3.3 GREEN: implement reconciliation schemas, matching/snapshots, savepoint/named-constraint handling, list/detail queries, and action route.
+- [x] 3.4 REFACTOR: enforce Decimal/enum comparisons, UTC normalization, and no mutation paths.
 
 ## Phase 4: Integration (PR 4)
 

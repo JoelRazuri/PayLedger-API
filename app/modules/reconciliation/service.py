@@ -5,14 +5,19 @@ from hashlib import sha256
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session
 
+from app.modules.payments.model import Payment
+from app.modules.reconciliation.enums import ReconciliationResult
 from app.modules.reconciliation.exceptions import (
     ExternalTransactionConflictError,
     ExternalTransactionNotFoundError,
+    ReconciliationConflictError,
+    ReconciliationNotFoundError,
 )
-from app.modules.reconciliation.model import ExternalTransaction
+from app.modules.reconciliation.model import ExternalTransaction, Reconciliation
 from app.modules.reconciliation.schema import (
     ExternalTransactionCreate,
     ExternalTransactionListQuery,
+    ReconciliationListQuery,
 )
 
 _EXTERNAL_TRANSACTION_UNIQUE = "uq_external_transactions_owner_provider_external_id"
@@ -148,3 +153,127 @@ def _replay_or_conflict(
 def _constraint_name(error: IntegrityError) -> str | None:
     diagnostics = getattr(error.orig, "diag", None)
     return getattr(diagnostics, "constraint_name", None)
+
+
+@dataclass(frozen=True)
+class ReconciliationCreation:
+    reconciliation: Reconciliation
+    replayed: bool
+
+
+def create_reconciliation(
+    db: Session,
+    owner_id: int,
+    external_transaction_id: int,
+    idempotency_key: str,
+) -> ReconciliationCreation:
+    existing = (
+        db.query(Reconciliation)
+        .filter(
+            Reconciliation.owner_id == owner_id,
+            Reconciliation.idempotency_key == idempotency_key,
+        )
+        .first()
+    )
+    if existing is not None:
+        if existing.external_transaction_id != external_transaction_id:
+            raise ReconciliationConflictError
+        return ReconciliationCreation(existing, replayed=True)
+
+    external = get_external_transaction(db, owner_id, external_transaction_id)
+    payment = (
+        db.query(Payment)
+        .filter(
+            Payment.owner_id == owner_id,
+            Payment.provider == external.provider,
+            Payment.provider_payment_id == external.provider_payment_id,
+        )
+        .first()
+    )
+    if payment is None:
+        reconciliation = Reconciliation(
+            owner_id=owner_id,
+            external_transaction_id=external.id,
+            idempotency_key=idempotency_key,
+            external_amount=external.amount,
+            external_currency=external.currency,
+            external_status=external.status,
+            result=ReconciliationResult.UNMATCHED,
+        )
+    else:
+        amount_matches = payment.amount == external.amount
+        currency_matches = payment.currency == external.currency
+        status_matches = payment.status == external.status
+        result = (
+            ReconciliationResult.MATCHED
+            if amount_matches and currency_matches and status_matches
+            else ReconciliationResult.MISMATCHED
+        )
+        reconciliation = Reconciliation(
+            owner_id=owner_id,
+            external_transaction_id=external.id,
+            payment_id=payment.id,
+            idempotency_key=idempotency_key,
+            external_amount=external.amount,
+            external_currency=external.currency,
+            external_status=external.status,
+            local_amount=payment.amount,
+            local_currency=payment.currency,
+            local_status=payment.status,
+            result=result,
+            amount_matches=amount_matches,
+            currency_matches=currency_matches,
+            status_matches=status_matches,
+        )
+    try:
+        with db.begin_nested():
+            db.add(reconciliation)
+            db.flush()
+    except IntegrityError as error:
+        if _constraint_name(error) == "uq_reconciliations_owner_idempotency_key":
+            winner = (
+                db.query(Reconciliation)
+                .filter(
+                    Reconciliation.owner_id == owner_id,
+                    Reconciliation.idempotency_key == idempotency_key,
+                )
+                .first()
+            )
+            if winner is not None:
+                if winner.external_transaction_id != external_transaction_id:
+                    raise ReconciliationConflictError
+                return ReconciliationCreation(winner, replayed=True)
+        db.rollback()
+        raise
+    db.commit()
+    db.refresh(reconciliation)
+    return ReconciliationCreation(reconciliation, replayed=False)
+
+
+def get_reconciliation(
+    db: Session, owner_id: int, reconciliation_id: int
+) -> Reconciliation:
+    value = (
+        db.query(Reconciliation)
+        .filter(
+            Reconciliation.owner_id == owner_id, Reconciliation.id == reconciliation_id
+        )
+        .first()
+    )
+    if value is None:
+        raise ReconciliationNotFoundError
+    return value
+
+
+def list_reconciliations(
+    db: Session, owner_id: int, filters: ReconciliationListQuery
+) -> list[Reconciliation]:
+    query = db.query(Reconciliation).filter(Reconciliation.owner_id == owner_id)
+    if filters.result is not None:
+        query = query.filter(Reconciliation.result == filters.result)
+    return (
+        query.order_by(Reconciliation.reconciled_at.desc(), Reconciliation.id.desc())
+        .offset(filters.offset)
+        .limit(filters.limit)
+        .all()
+    )

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -11,17 +11,24 @@ from app.modules.auth.dependencies import get_current_user
 from app.modules.reconciliation.exceptions import (
     ExternalTransactionConflictError,
     ExternalTransactionNotFoundError,
+    ReconciliationConflictError,
+    ReconciliationNotFoundError,
 )
-from app.modules.reconciliation.model import ExternalTransaction
+from app.modules.reconciliation.model import ExternalTransaction, Reconciliation
 from app.modules.reconciliation.schema import (
     ExternalTransactionCreate,
     ExternalTransactionListQuery,
     ExternalTransactionResponse,
+    ReconciliationListQuery,
+    ReconciliationResponse,
 )
 from app.modules.reconciliation.service import (
     create_external_transaction,
+    create_reconciliation,
     get_external_transaction,
+    get_reconciliation,
     list_external_transactions,
+    list_reconciliations,
 )
 from app.modules.users.model import User
 
@@ -99,3 +106,64 @@ def get_external_transaction_route(
         return get_external_transaction(db, current_user.id, external_transaction_id)
     except ExternalTransactionNotFoundError as error:
         raise external_transaction_http_error(error) from error
+
+
+reconciliations_router = APIRouter(
+    prefix="/reconciliations",
+    tags=["Reconciliation"],
+    route_class=SpanishValidationRoute,
+)
+
+
+def reconciliation_http_error(error: Exception) -> HTTPException:
+    if isinstance(
+        error, (ExternalTransactionNotFoundError, ReconciliationNotFoundError)
+    ):
+        return HTTPException(status_code=404, detail="Conciliación no encontrada")
+    return HTTPException(
+        status_code=409,
+        detail="La clave de idempotencia ya fue utilizada con otra transacción externa",
+    )
+
+
+@router.post(
+    "/{external_transaction_id}/reconcile", response_model=ReconciliationResponse
+)
+def reconcile_external_transaction_route(
+    external_transaction_id: int,
+    idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1, max_length=255)
+    ],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Reconciliation:
+    try:
+        created = create_reconciliation(
+            db, current_user.id, external_transaction_id, idempotency_key
+        )
+    except (ExternalTransactionNotFoundError, ReconciliationConflictError) as error:
+        raise reconciliation_http_error(error) from error
+    return created.reconciliation
+
+
+@reconciliations_router.get("", response_model=list[ReconciliationResponse])
+def list_reconciliation_routes(
+    filters: Annotated[ReconciliationListQuery, Depends()],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[Reconciliation]:
+    return list_reconciliations(db, current_user.id, filters)
+
+
+@reconciliations_router.get(
+    "/{reconciliation_id}", response_model=ReconciliationResponse
+)
+def get_reconciliation_route(
+    reconciliation_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Reconciliation:
+    try:
+        return get_reconciliation(db, current_user.id, reconciliation_id)
+    except ReconciliationNotFoundError as error:
+        raise reconciliation_http_error(error) from error
