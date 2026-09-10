@@ -10,6 +10,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ENUM
 from sqlalchemy.orm import Mapped, mapped_column
@@ -110,6 +111,14 @@ class Payment(Base):
         Index("ix_payments_owner_status", "owner_id", "status"),
         Index("ix_payments_owner_provider", "owner_id", "provider"),
         Index("ix_payments_owner_currency", "owner_id", "currency"),
+        Index(
+            "uq_payments_owner_provider_provider_payment_id",
+            "owner_id",
+            "provider",
+            "provider_payment_id",
+            unique=True,
+            postgresql_where=text("provider_payment_id IS NOT NULL"),
+        ),
         UniqueConstraint(
             "owner_id",
             "idempotency_key",
