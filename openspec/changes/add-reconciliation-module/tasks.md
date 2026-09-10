@@ -35,10 +35,14 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Evidence API (PR 2)
 
-- [ ] 2.1 RED: tests across all six routes for missing/invalid JWT (401), progressive/malformed/timezone-naive payload (422), foreign/unknown IDs (404), and PATCH/PUT/DELETE immutability (405).
-- [ ] 2.2 RED: tests for `-03:00` UTC normalization, terminal timestamps, fingerprint replay, changed payload 409, and concurrent owner/provider/external uniqueness.
-- [ ] 2.3 GREEN: implement `schema.py`, `exceptions.py`, `service.py`, and evidence `router.py` routes with validation, UTC responses, owner scoping, named-constraint recovery.
-- [ ] 2.4 REFACTOR: preserve Spanish errors, deterministic pagination/order, and endpoint-focused tests.
+- [x] 2.1 RED: tests across all six routes for missing/invalid JWT (401), progressive/malformed/timezone-naive payload (422), foreign/unknown IDs (404), and PATCH/PUT/DELETE immutability (405).
+- [x] 2.2 RED: tests for `-03:00` UTC normalization, terminal timestamps, fingerprint replay, changed payload 409, and concurrent owner/provider/external uniqueness.
+- [x] 2.3 GREEN: implement `schema.py`, `exceptions.py`, `service.py`, and evidence `router.py` routes with validation, UTC responses, owner scoping, named-constraint recovery.
+- [x] 2.4 REFACTOR: preserve Spanish errors, deterministic pagination/order, and endpoint-focused tests.
+
+> Evidence API verification (2026-09-10): six missing/invalid JWT cases and six forbidden collection/member mutations return 401/405; HTTPX + PostgreSQL verifies terminal ingestion, offset UTC normalization, replay, changed-payload conflict, and foreign-ID 404.
+
+> Gatekeeper correction evidence (2026-09-10): two synchronized PostgreSQL sessions converge on one exact evidence row and one replay; HTTP rejects timezone-naïve occurrence timestamps with 422; PostgreSQL listing proves `received_at DESC, id DESC` ordering, including an equal-time ID tie.
 
 ## Phase 3: Reconciliation API (PR 3)
 
