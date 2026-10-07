@@ -2,7 +2,7 @@
 
 ## 1. Propósito
 
-PayLedger API es una plataforma backend de control financiero y conciliación para empresas. Registra las operaciones informadas por una empresa cliente, conserva su impacto contable interno y, en una etapa posterior, las comparará con datos de bancos, proveedores o procesadores externos simulados.
+PayLedger API es una plataforma backend de control financiero y conciliación para empresas. Registra las operaciones informadas por una empresa cliente, conserva su impacto contable interno y las compara con operaciones de proveedores externos simulados.
 
 PayLedger **no es un banco ni una billetera**: no custodia, recibe ni transfiere dinero real. Su objetivo es aportar trazabilidad, clasificación contable y detección de diferencias.
 
@@ -10,7 +10,7 @@ El dominio se divide de esta manera:
 
 - **Payments** representa la operación informada por la empresa.
 - **Ledger** registra el impacto contable de un pago completado.
-- **Reconciliation** comparará los registros locales con una fuente externa.
+- **Reconciliation** compara los registros locales con evidencia de una fuente externa simulada.
 - **Audit** registrará las acciones relevantes realizadas en el sistema.
 
 El proyecto también tiene un propósito educativo: practicar procesos habituales de sistemas financieros mediante FastAPI, PostgreSQL, SQLAlchemy y una arquitectura modular.
@@ -25,7 +25,7 @@ El proyecto también tiene un propósito educativo: practicar procesos habituale
 | Registro, inicio de sesión y perfil autenticado | Implementada |
 | Creación, consulta, procesamiento y cancelación de pagos | Implementada |
 | Asientos contables de doble entrada | Implementada |
-| Conciliación con un proveedor simulado | Pendiente |
+| Conciliación con un proveedor simulado | Implementada |
 | Auditoría básica | Pendiente |
 
 Queda fuera del alcance inicial:
@@ -51,7 +51,8 @@ app/
 │   ├── users/
 │   ├── auth/
 │   ├── payments/
-│   └── ledger/
+│   ├── ledger/
+│   └── reconciliation/
 ├── shared/               # excepciones y utilidades compartidas
 └── main.py               # creación de FastAPI y registro de routers
 ```
@@ -85,7 +86,7 @@ Se mantiene un enfoque directo y Pythonic, sin una capa `repository` prematura. 
 
 La aplicación puede utilizar **una instancia local de PostgreSQL o la instancia de Docker Compose**. Son alternativas de ejecución; sus credenciales pueden ser diferentes y `DATABASE_URL` determina cuál utiliza la API.
 
-Las migraciones de Alembic versionan los cambios de `users`, credenciales, fechas con zona horaria, `payments`, `journal_entries` y `ledger_entries`.
+Las migraciones de Alembic versionan los cambios de `users`, credenciales, fechas con zona horaria, `payments`, `journal_entries`, `ledger_entries`, `external_transactions` y `reconciliations`.
 
 ---
 
@@ -143,6 +144,29 @@ GET /ledger/payments/{payment_id}/journal
 
 Las consultas requieren JWT, solo exponen recursos del usuario autenticado y normalizan `occurred_at` y `created_at` explícitamente a UTC. El listado admite paginación y filtros por moneda y cuenta.
 
+### Reconciliation
+
+Registra evidencia terminal proveniente de proveedores externos simulados y la compara explícitamente con los pagos locales. La evidencia es inmutable e idempotente por propietario, proveedor e identificador externo.
+
+El matching utiliza propietario, proveedor y `provider_payment_id`. Cada ejecución conserva snapshots locales y externos de importe, moneda y estado, y produce uno de estos resultados:
+
+- `matched`: todos los valores coinciden;
+- `mismatched`: existe el pago, pero uno o más valores difieren;
+- `unmatched`: no existe un pago local correspondiente.
+
+Las conciliaciones son append-only. `Idempotency-Key` distingue un reintento de una nueva ejecución deliberada, incluso ante solicitudes concurrentes.
+
+```http
+POST /external-transactions
+GET  /external-transactions
+GET  /external-transactions/{external_transaction_id}
+POST /external-transactions/{external_transaction_id}/reconcile
+GET  /reconciliations
+GET  /reconciliations/{reconciliation_id}
+```
+
+Todos los endpoints requieren JWT, aíslan datos por usuario y normalizan las fechas expuestas a UTC. Los listados admiten paginación y las conciliaciones pueden filtrarse por resultado.
+
 ---
 
 ## 6. Persistencia actual
@@ -153,8 +177,10 @@ Las consultas requieren JWT, solo exponen recursos del usuario autenticado y nor
 | `payments` | Pago local, propietario, clave idempotente, destinatario, estado y resultado del proveedor |
 | `journal_entries` | Cabecera del asiento asociado al evento de un pago completado |
 | `ledger_entries` | Movimientos débito y crédito que componen el asiento |
+| `external_transactions` | Evidencia inmutable recibida de proveedores externos simulados |
+| `reconciliations` | Intentos append-only con resultados, snapshots y claves idempotentes |
 
-Los modelos de Reconciliation y Audit se definirán cuando se diseñen esos módulos; este documento no anticipa tablas ni endpoints que todavía no existen.
+El modelo de Audit se definirá cuando se diseñe ese módulo; este documento no anticipa tablas ni endpoints que todavía no existen.
 
 ---
 
@@ -176,31 +202,34 @@ Los modelos de Reconciliation y Audit se definirán cuando se diseñen esos mód
 
 ## 8. Estado y documentación de cambios
 
-Los módulos Users, Auth, Payments y Ledger están implementados. Auth, Payments y Ledger completaron su flujo SDD y sus artefactos se conservan en:
+Los módulos Users, Auth, Payments, Ledger y Reconciliation están implementados. Auth, Payments, Ledger y Reconciliation completaron su flujo de desarrollo y sus artefactos se conservan en:
 
 ```text
 openspec/changes/archive/
 ├── 2026-08-05-validate-user-full-name/
 ├── 2026-08-06-add-authentication/
 ├── 2026-08-10-add-payments-module/
-└── 2026-08-27-add-ledger-module/
+├── 2026-08-27-add-ledger-module/
+└── 2026-10-07-add-reconciliation-module/
 ```
 
 Los documentos archivados contienen las propuestas, especificaciones, diseños, tareas y evidencias de verificación de cada cambio. Deben consultarse para conocer reglas detalladas; el código y las migraciones siguen siendo la fuente de verdad del estado ejecutable.
+
+Reconciliation cumple funcionalmente sus 8 requisitos y 15 escenarios, con 181 pruebas automatizadas y una comprobación manual integral aprobadas. Su archivo conserva un `verify-report.md` con `FAIL` y un `process-exception.md`: la limitación corresponde a evidencia histórica incompleta del proceso Strict TDD, no a un defecto funcional conocido.
 
 ---
 
 ## 9. Próximos pasos
 
-El siguiente módulo es **Reconciliation**. Antes de implementarlo se deben definir, como mínimo:
+El siguiente módulo es **Audit**. Para mantener una primera versión pequeña y útil, primero se deben definir:
 
-1. el formato de las operaciones externas simuladas;
-2. la clave utilizada para vincularlas con pagos locales;
-3. las reglas de coincidencia y discrepancia;
-4. los estados y el historial de cada conciliación;
-5. los endpoints y permisos de consulta o ejecución.
+1. qué acciones relevantes deben generar eventos de auditoría;
+2. qué actor, recurso, resultado y contexto mínimo se conservarán;
+3. cómo se garantiza que el historial sea inmutable y aislado por usuario;
+4. qué consultas necesita la primera versión;
+5. qué datos sensibles deben excluirse explícitamente.
 
-Después se implementará **Audit** y se realizará una prueba integral de la primera versión de la API.
+Después se realizará una prueba integral de Users, Auth, Payments, Ledger, Reconciliation y Audit para cerrar la primera versión de la API.
 
 ---
 
