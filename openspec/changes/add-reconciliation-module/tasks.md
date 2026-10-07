@@ -53,6 +53,6 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Integration (PR 4)
 
-- [ ] 4.1 RED: tests for app import/route registration, PostgreSQL races, UTC round-trip, migration cycle, and owner-isolation regression.
-- [ ] 4.2 GREEN: modify `app/main.py` and `alembic/env.py`; add integration/migration tests and route wiring.
-- [ ] 4.3 REFACTOR: run full pytest/import checks, record manual responses/counts, and document rollback/evidence export.
+- [x] 4.1 RED: tests for app import/route registration, PostgreSQL races, UTC round-trip, migration cycle, and owner-isolation regression.
+- [x] 4.2 GREEN: modify `app/main.py` and `alembic/env.py`; add integration/migration tests and route wiring.
+- [x] 4.3 REFACTOR: run full pytest/import checks, record manual responses/counts, and document rollback/evidence export.

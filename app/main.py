@@ -4,6 +4,12 @@ from app.core.settings import get_settings
 from app.modules.auth.router import router as auth_router
 from app.modules.ledger.router import router as ledger_router
 from app.modules.payments.router import router as payments_router
+from app.modules.reconciliation.router import (
+    reconciliations_router,
+)
+from app.modules.reconciliation.router import (
+    router as reconciliation_router,
+)
 from app.modules.users.router import router as users_router
 
 settings = get_settings()
@@ -18,6 +24,8 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(payments_router)
 app.include_router(ledger_router)
+app.include_router(reconciliation_router)
+app.include_router(reconciliations_router)
 
 
 @app.get("/health")
