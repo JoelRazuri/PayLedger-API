@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import update
 
 from app.core.database import get_db
+from app.modules.audit.enums import AuditAction, AuditOutcome
+from app.modules.audit.model import AuditEvent
 from app.modules.auth.dependencies import get_current_user
 from app.modules.payments.enums import (
     Currency,
@@ -111,6 +113,12 @@ def test_evidence_httpx_flow_persists_replay_conflict_and_owner_boundary(
                 f"/external-transactions/{foreign.external_transaction.id}"
             )
             listed = client.get("/external-transactions?limit=20")
+        events = (
+            db.query(AuditEvent)
+            .filter(AuditEvent.actor_user_id == owner.id)
+            .order_by(AuditEvent.id)
+            .all()
+        )
     finally:
         app.dependency_overrides.clear()
         db.close()
@@ -122,6 +130,13 @@ def test_evidence_httpx_flow_persists_replay_conflict_and_owner_boundary(
     assert progressive.status_code == 422
     assert foreign_response.status_code == 404
     assert [item["external_id"] for item in listed.json()] == ["evidence-1"]
+    assert [(event.action, event.outcome) for event in events] == [
+        (AuditAction.EXTERNAL_TRANSACTION_INGEST, AuditOutcome.SUCCESS),
+        (AuditAction.EXTERNAL_TRANSACTION_INGEST, AuditOutcome.SUCCESS),
+        (AuditAction.EXTERNAL_TRANSACTION_INGEST, AuditOutcome.FAILURE),
+    ]
+    assert [event.details for event in events] == [{}, {"replayed": True}, {}]
+    assert events[-1].reason_code == "idempotency_conflict"
 
 
 def test_two_postgresql_sessions_replay_one_exact_external_transaction(
@@ -386,6 +401,19 @@ def test_reconciliation_postgresql_runtime_proves_snapshots_queries_and_isolatio
             .values(reconciled_at=datetime(2026, 9, 10, 18, 0, tzinfo=UTC))
         )
         db.commit()
+        for value in (matched, currency, unmatched, foreign):
+            db.refresh(value.reconciliation)
+            db.expunge(value.reconciliation)
+        reconciliation_event_details = [
+            event.details
+            for event in (
+                db.query(AuditEvent)
+                .filter(AuditEvent.actor_user_id == owner.id)
+                .filter(AuditEvent.action == AuditAction.RECONCILIATION_EXECUTE)
+                .order_by(AuditEvent.id)
+                .all()
+            )
+        ]
 
         app.dependency_overrides[get_current_user] = lambda: owner
         app.dependency_overrides[get_db] = lambda: db
@@ -434,3 +462,8 @@ def test_reconciliation_postgresql_runtime_proves_snapshots_queries_and_isolatio
     assert filtered.json()[0]["id"] == currency.reconciliation.id
     assert detail.json()["reconciled_at"] == "2026-09-10T18:00:00Z"
     assert (foreign_reconcile.status_code, foreign_detail.status_code) == (404, 404)
+    assert reconciliation_event_details == [
+        {"result": "matched"},
+        {"result": "mismatched"},
+        {"result": "unmatched"},
+    ]

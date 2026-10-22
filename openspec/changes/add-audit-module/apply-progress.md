@@ -9,6 +9,9 @@
 - [x] 3.1 RED: payment audit integration tests
 - [x] 3.2 GREEN: atomic payment audit staging and failure persistence
 - [x] 3.3 REFACTOR: shared allowlisted audit helpers and preserved lifecycle commits
+- [x] 4.1 RED: reconciliation audit behavior tests
+- [x] 4.2 GREEN: atomic reconciliation audit integration
+- [x] 4.3 REFACTOR: preserve races, comparisons, and HTTP behavior
 
 ## TDD Cycle Evidence
 | Task | RED | GREEN | REFACTOR |
@@ -20,6 +23,9 @@
 | 3.1 | `pytest tests/integration/test_payments_postgres.py -k audit` failed: expected audit events were absent. | 1 passed PostgreSQL/HTTPX harness | Covers create/replay/process/rejection/cancel/provider exception outcomes. |
 | 3.2 | Payment unit tests failed before `payment_audit_details` existed. | 11 passed | Stages domain success and provider result events at their commit boundary. |
 | 3.3 | Existing payment/ledger approval tests passed before refactor. | 23 focused tests passed | Keeps the durable PROCESSING claim and ledger rollback behavior. |
+| 4.1 | `pytest tests/modules/reconciliation/test_service.py -k audit` failed: audit events were absent. | 2 passed | Triangulates ingest/replay/conflict and reconciliation result/replay/conflict. |
+| 4.2 | The RED audit assertions preceded reconciliation service changes. | 17 focused unit/PostgreSQL tests passed | Success events stage before their domain commit; known failures rollback then commit a separate event. |
+| 4.3 | Existing race and owner-isolation tests formed the safety net. | 17 passed; Ruff/import/diff checks passed | Retains savepoint recovery, Decimal/enum equality, and unchanged routes. |
 ## Work Unit Evidence
 | Evidence | Result |
 |---|---|
@@ -32,5 +38,7 @@
 | Phase 3 focused/runtime | `pytest tests/modules/payments/test_service.py tests/integration/test_payments_postgres.py tests/integration/test_ledger_postgres.py` - 23 passed; PostgreSQL/HTTPX audit flow passed. |
 | Phase 3 Ruff / import | `ruff check app tests` and `python -c "import app.main"` passed. |
 | Phase 3 rollback | Revert payment audit hooks and the Phase 3 payment/ledger tests without touching reconciliation. |
+| Phase 4 focused/runtime | `pytest tests/modules/reconciliation/test_service.py tests/integration/test_reconciliation_evidence_postgres.py` — 17 passed; two PostgreSQL sessions and HTTPX covered ingest/replay/conflict, reconcile result/replay/race/rollback/isolation. |
+| Phase 4 quality / rollback | `ruff check app tests --select E,F,I`, `python -c "import app.main"`, and `git diff --check` passed; revert reconciliation audit hooks and reconciliation tests only. |
 ## Remaining Tasks
-- [ ] 4.1 through 5.2
+- [ ] 5.1 through 5.2

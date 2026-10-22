@@ -41,9 +41,9 @@ Chain strategy: stacked-to-main
 - [x] 3.3 REFACTOR: preserve processing claims, ledger behavior, and existing API responses while sharing audit transaction helpers.
 
 ## Phase 4: Reconciliation integration (PR 4, <=260 lines)
-- [ ] 4.1 RED: test ingest/replay/conflict, matched/mismatched/unmatched/replay execution, races, atomic success, durable failure, and isolation.
-- [ ] 4.2 GREEN: modify `app/modules/reconciliation/service.py` at ingest/reconcile commit and rollback boundaries.
-- [ ] 4.3 REFACTOR: retain savepoint/unique-race recovery, Decimal/enum comparisons, and HTTP behavior.
+- [x] 4.1 RED: test ingest/replay/conflict, matched/mismatched/unmatched/replay execution, races, atomic success, durable failure, and isolation.
+- [x] 4.2 GREEN: modify `app/modules/reconciliation/service.py` at ingest/reconcile commit and rollback boundaries.
+- [x] 4.3 REFACTOR: retain savepoint/unique-race recovery, Decimal/enum comparisons, and HTTP behavior.
 
 ## Phase 5: Final verification
 - [ ] 5.1 VERIFY: run full pytest, migration cycle/trigger harness, and `.\.venv\Scripts\python.exe -c "import app.main"`.

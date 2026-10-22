@@ -5,6 +5,8 @@ from hashlib import sha256
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session
 
+from app.modules.audit.enums import AuditAction, AuditOutcome, AuditResourceType
+from app.modules.audit.service import AuditEventData, stage_event
 from app.modules.payments.model import Payment
 from app.modules.reconciliation.enums import ReconciliationResult
 from app.modules.reconciliation.exceptions import (
@@ -55,7 +57,7 @@ def create_external_transaction(
         db, owner_id, request.provider.value, request.external_id
     )
     if existing is not None:
-        return _replay_or_conflict(existing, fingerprint)
+        return _replay_or_conflict(db, owner_id, existing, fingerprint)
 
     external_transaction = ExternalTransaction(
         owner_id=owner_id,
@@ -78,10 +80,13 @@ def create_external_transaction(
                 db, owner_id, request.provider.value, request.external_id
             )
             if winner is not None:
-                return _replay_or_conflict(winner, fingerprint)
+                return _replay_or_conflict(db, owner_id, winner, fingerprint)
         db.rollback()
         raise
 
+    _stage_external_transaction_event(
+        db, owner_id, external_transaction.id, AuditOutcome.SUCCESS
+    )
     db.commit()
     db.refresh(external_transaction)
     return ExternalTransactionCreation(external_transaction, replayed=False)
@@ -142,17 +147,71 @@ def _owned_query(db: Session, owner_id: int) -> Query:
 
 
 def _replay_or_conflict(
+    db: Session,
+    owner_id: int,
     external_transaction: ExternalTransaction,
     fingerprint: str,
 ) -> ExternalTransactionCreation:
     if external_transaction.request_fingerprint != fingerprint:
+        _record_external_transaction_failure(
+            db, owner_id, external_transaction.id, "idempotency_conflict"
+        )
         raise ExternalTransactionConflictError
+    _stage_external_transaction_event(
+        db,
+        owner_id,
+        external_transaction.id,
+        AuditOutcome.SUCCESS,
+        replayed=True,
+    )
+    db.commit()
+    db.refresh(external_transaction)
     return ExternalTransactionCreation(external_transaction, replayed=True)
 
 
 def _constraint_name(error: IntegrityError) -> str | None:
     diagnostics = getattr(error.orig, "diag", None)
     return getattr(diagnostics, "constraint_name", None)
+
+
+def _stage_external_transaction_event(
+    db: Session,
+    owner_id: int,
+    external_transaction_id: int | None,
+    outcome: AuditOutcome,
+    *,
+    replayed: bool = False,
+    reason_code: str | None = None,
+) -> None:
+    stage_event(
+        db,
+        AuditEventData(
+            actor_user_id=owner_id,
+            action=AuditAction.EXTERNAL_TRANSACTION_INGEST,
+            resource_type=AuditResourceType.EXTERNAL_TRANSACTION,
+            resource_id=external_transaction_id,
+            outcome=outcome,
+            reason_code=reason_code if outcome is AuditOutcome.FAILURE else None,
+            details={"replayed": True} if replayed else {},
+        ),
+    )
+
+
+def _record_external_transaction_failure(
+    db: Session,
+    owner_id: int,
+    external_transaction_id: int | None,
+    reason_code: str,
+) -> None:
+    db.rollback()
+    _stage_external_transaction_event(
+        db,
+        owner_id,
+        external_transaction_id,
+        AuditOutcome.FAILURE,
+        reason_code=reason_code,
+    )
+    db.commit()
 
 
 @dataclass(frozen=True)
@@ -176,11 +235,15 @@ def create_reconciliation(
         .first()
     )
     if existing is not None:
-        if existing.external_transaction_id != external_transaction_id:
-            raise ReconciliationConflictError
-        return ReconciliationCreation(existing, replayed=True)
+        return _reconciliation_replay_or_conflict(
+            db, owner_id, existing, external_transaction_id
+        )
 
-    external = get_external_transaction(db, owner_id, external_transaction_id)
+    try:
+        external = get_external_transaction(db, owner_id, external_transaction_id)
+    except ExternalTransactionNotFoundError:
+        _record_reconciliation_failure(db, owner_id, None, "not_found")
+        raise
     payment = (
         db.query(Payment)
         .filter(
@@ -240,14 +303,80 @@ def create_reconciliation(
                 .first()
             )
             if winner is not None:
-                if winner.external_transaction_id != external_transaction_id:
-                    raise ReconciliationConflictError
-                return ReconciliationCreation(winner, replayed=True)
+                return _reconciliation_replay_or_conflict(
+                    db, owner_id, winner, external_transaction_id
+                )
         db.rollback()
         raise
+    _stage_reconciliation_event(
+        db, owner_id, reconciliation.id, reconciliation.result
+    )
     db.commit()
     db.refresh(reconciliation)
     return ReconciliationCreation(reconciliation, replayed=False)
+
+
+def _reconciliation_replay_or_conflict(
+    db: Session,
+    owner_id: int,
+    reconciliation: Reconciliation,
+    external_transaction_id: int,
+) -> ReconciliationCreation:
+    if reconciliation.external_transaction_id != external_transaction_id:
+        _record_reconciliation_failure(
+            db, owner_id, reconciliation.id, "idempotency_conflict"
+        )
+        raise ReconciliationConflictError
+    _stage_reconciliation_event(
+        db, owner_id, reconciliation.id, replayed=True
+    )
+    db.commit()
+    db.refresh(reconciliation)
+    return ReconciliationCreation(reconciliation, replayed=True)
+
+
+def _stage_reconciliation_event(
+    db: Session,
+    owner_id: int,
+    reconciliation_id: int | None,
+    result: ReconciliationResult | None = None,
+    *,
+    replayed: bool = False,
+    outcome: AuditOutcome = AuditOutcome.SUCCESS,
+    reason_code: str | None = None,
+) -> None:
+    details = {"replayed": True} if replayed else {}
+    if result is not None:
+        details = {"result": result.value}
+    stage_event(
+        db,
+        AuditEventData(
+            actor_user_id=owner_id,
+            action=AuditAction.RECONCILIATION_EXECUTE,
+            resource_type=AuditResourceType.RECONCILIATION,
+            resource_id=reconciliation_id,
+            outcome=outcome,
+            reason_code=reason_code if outcome is AuditOutcome.FAILURE else None,
+            details=details,
+        ),
+    )
+
+
+def _record_reconciliation_failure(
+    db: Session,
+    owner_id: int,
+    reconciliation_id: int | None,
+    reason_code: str,
+) -> None:
+    db.rollback()
+    _stage_reconciliation_event(
+        db,
+        owner_id,
+        reconciliation_id,
+        outcome=AuditOutcome.FAILURE,
+        reason_code=reason_code,
+    )
+    db.commit()
 
 
 def get_reconciliation(

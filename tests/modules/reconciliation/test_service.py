@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.modules.audit.enums import AuditAction, AuditOutcome, AuditResourceType
+from app.modules.audit.model import AuditEvent
 from app.modules.payments.enums import Currency, PaymentProvider, PaymentStatus
 from app.modules.payments.model import Payment
 from app.modules.reconciliation.enums import ReconciliationResult
@@ -73,7 +75,7 @@ def test_create_external_transaction_persists_normalized_evidence() -> None:
     assert created.external_transaction.owner_id == 7
     assert created.external_transaction.external_id == "event-1"
     assert created.external_transaction.occurred_at.tzinfo is UTC
-    db.add.assert_called_once_with(created.external_transaction)
+    db.add.assert_any_call(created.external_transaction)
     db.flush.assert_called_once_with()
     db.commit.assert_called_once_with()
     db.refresh.assert_called_once_with(created.external_transaction)
@@ -92,7 +94,7 @@ def test_create_external_transaction_replays_or_conflicts_existing_evidence() ->
     assert replay == ExternalTransactionCreation(existing, replayed=True)
     with pytest.raises(ExternalTransactionConflictError):
         create_external_transaction(db, owner_id=7, request=request(amount="20.00"))
-    db.add.assert_not_called()
+    assert db.add.call_count == 2
 
 
 def test_create_external_transaction_recovers_only_named_unique_race() -> None:
@@ -112,7 +114,7 @@ def test_create_external_transaction_recovers_only_named_unique_race() -> None:
     replay = create_external_transaction(db, owner_id=7, request=request())
 
     assert replay == ExternalTransactionCreation(winner, replayed=True)
-    db.commit.assert_not_called()
+    db.commit.assert_called_once_with()
 
 
 def test_get_and_list_external_transactions_are_owner_scoped_and_stable() -> None:
@@ -272,3 +274,88 @@ def test_reconciliation_replay_conflict_list_and_detail_are_owner_scoped() -> No
     list_query.limit.assert_called_once_with(2)
     with pytest.raises(ReconciliationNotFoundError):
         get_reconciliation(db, 7, 999)
+
+
+def test_external_transaction_audits_create_replay_and_conflict() -> None:
+    db = MagicMock(spec=Session)
+    query = db.query.return_value
+    query.filter.return_value = query
+    query.first.return_value = None
+
+    created = create_external_transaction(db, owner_id=7, request=request())
+
+    created_event = db.add.call_args_list[-1].args[0]
+    assert isinstance(created_event, AuditEvent)
+    assert (
+        created_event.action,
+        created_event.resource_type,
+        created_event.resource_id,
+        created_event.outcome,
+        created_event.details,
+    ) == (
+        AuditAction.EXTERNAL_TRANSACTION_INGEST,
+        AuditResourceType.EXTERNAL_TRANSACTION,
+        created.external_transaction.id,
+        AuditOutcome.SUCCESS,
+        {},
+    )
+
+    existing = ExternalTransaction(id=4, owner_id=7)
+    existing.request_fingerprint = external_transaction_fingerprint(request())
+    query.first.return_value = existing
+    replay = create_external_transaction(db, owner_id=7, request=request())
+
+    replay_event = db.add.call_args_list[-1].args[0]
+    assert replay.replayed is True
+    assert replay_event.details == {"replayed": True}
+
+    with pytest.raises(ExternalTransactionConflictError):
+        create_external_transaction(db, owner_id=7, request=request(amount="20.00"))
+
+    failure_event = db.add.call_args_list[-1].args[0]
+    assert (failure_event.outcome, failure_event.reason_code) == (
+        AuditOutcome.FAILURE,
+        "idempotency_conflict",
+    )
+    assert db.rollback.called
+
+
+def test_reconciliation_audits_results_replay_and_conflict() -> None:
+    external = _external_transaction()
+    db = _reconciliation_db(external, _payment())
+
+    created = create_reconciliation(db, 7, external.id, "match")
+
+    created_event = db.add.call_args_list[-1].args[0]
+    assert isinstance(created_event, AuditEvent)
+    assert (
+        created_event.action,
+        created_event.resource_type,
+        created_event.resource_id,
+        created_event.outcome,
+        created_event.details,
+    ) == (
+        AuditAction.RECONCILIATION_EXECUTE,
+        AuditResourceType.RECONCILIATION,
+        created.reconciliation.id,
+        AuditOutcome.SUCCESS,
+        {"result": "matched"},
+    )
+
+    replay_db = MagicMock(spec=Session)
+    replay_query = replay_db.query.return_value
+    replay_query.filter.return_value = replay_query
+    replay_query.first.return_value = created.reconciliation
+    replay = create_reconciliation(replay_db, 7, external.id, "match")
+    replay_event = replay_db.add.call_args_list[-1].args[0]
+    assert replay.replayed is True
+    assert replay_event.details == {"replayed": True}
+
+    with pytest.raises(ReconciliationConflictError):
+        create_reconciliation(replay_db, 7, external.id + 1, "match")
+
+    failure_event = replay_db.add.call_args_list[-1].args[0]
+    assert (failure_event.outcome, failure_event.reason_code) == (
+        AuditOutcome.FAILURE,
+        "idempotency_conflict",
+    )
