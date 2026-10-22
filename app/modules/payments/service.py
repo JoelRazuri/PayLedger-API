@@ -7,6 +7,8 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.modules.audit.enums import AuditAction, AuditOutcome, AuditResourceType
+from app.modules.audit.service import AuditEventData, stage_event
 from app.modules.ledger.enums import LedgerEventType
 from app.modules.ledger.model import JournalEntry
 from app.modules.ledger.service import record_completed_payment
@@ -47,6 +49,14 @@ def payment_fingerprint(request: PaymentCreate) -> str:
     return sha256(encoded.encode()).hexdigest()
 
 
+def payment_audit_details(
+    status: PaymentStatus | None = None, *, replayed: bool = False
+) -> dict[str, object]:
+    if replayed:
+        return {"replayed": True}
+    return {"status": status.value} if status is not None else {}
+
+
 def create_payment(
     db: Session,
     owner_id: int,
@@ -56,7 +66,7 @@ def create_payment(
     fingerprint = payment_fingerprint(request)
     existing = _find_by_key(db, owner_id, idempotency_key)
     if existing:
-        return _replay_or_conflict(existing, fingerprint)
+        return _replay_or_conflict(db, owner_id, existing, fingerprint)
 
     payment = Payment(
         owner_id=owner_id,
@@ -75,7 +85,7 @@ def create_payment(
     if error:
         existing = _find_by_key(db, owner_id, idempotency_key)
         if existing:
-            return _replay_or_conflict(existing, fingerprint)
+            return _replay_or_conflict(db, owner_id, existing, fingerprint)
         raise error
     return PaymentCreation(payment=payment, replayed=False)
 
@@ -115,17 +125,44 @@ def process_payment(
     scenario: PaymentProcessScenario,
     provider: PaymentProvider,
 ) -> Payment:
-    get_payment(db, owner_id, payment_id)
-    provider_input = _claim_pending(
-        db, owner_id, payment_id, PaymentStatus.PROCESSING
-    )
+    try:
+        get_payment(db, owner_id, payment_id)
+        provider_input = _claim_pending(
+            db, owner_id, payment_id, PaymentStatus.PROCESSING
+        )
+    except (PaymentNotFoundError, PaymentStateConflictError) as error:
+        _record_payment_failure(db, owner_id, AuditAction.PAYMENT_PROCESS, payment_id)
+        raise error
+
     result = provider.process(provider_input, scenario)
-    return _complete_processing(db, owner_id, provider_input.payment_id, result)
+    try:
+        return _complete_processing(db, owner_id, provider_input.payment_id, result)
+    except PaymentStateConflictError as error:
+        _record_payment_failure(db, owner_id, AuditAction.PAYMENT_PROCESS, payment_id)
+        raise error
 
 
 def cancel_payment(db: Session, owner_id: int, payment_id: int) -> Payment:
-    get_payment(db, owner_id, payment_id)
-    claimed = _claim_pending(db, owner_id, payment_id, PaymentStatus.CANCELLED)
+    try:
+        get_payment(db, owner_id, payment_id)
+        claimed = _claim_pending(
+            db, owner_id, payment_id, PaymentStatus.CANCELLED, commit=False
+        )
+        _stage_payment_event(
+            db,
+            owner_id,
+            AuditAction.PAYMENT_CANCEL,
+            claimed.payment_id,
+            AuditOutcome.SUCCESS,
+            PaymentStatus.CANCELLED,
+        )
+        db.commit()
+    except (PaymentNotFoundError, PaymentStateConflictError) as error:
+        _record_payment_failure(db, owner_id, AuditAction.PAYMENT_CANCEL, payment_id)
+        raise error
+    except Exception:
+        db.rollback()
+        raise
     return get_payment(db, owner_id, claimed.payment_id)
 
 
@@ -144,6 +181,15 @@ def _owned_query(db: Session, owner_id: int):
 def _save_payment(db: Session, payment: Payment) -> IntegrityError | None:
     db.add(payment)
     try:
+        db.flush()
+        _stage_payment_event(
+            db,
+            payment.owner_id,
+            AuditAction.PAYMENT_CREATE,
+            payment.id,
+            AuditOutcome.SUCCESS,
+            PaymentStatus.PENDING,
+        )
         db.commit()
     except IntegrityError as error:
         db.rollback()
@@ -152,9 +198,27 @@ def _save_payment(db: Session, payment: Payment) -> IntegrityError | None:
     return None
 
 
-def _replay_or_conflict(payment: Payment, fingerprint: str) -> PaymentCreation:
+def _replay_or_conflict(
+    db: Session, owner_id: int, payment: Payment, fingerprint: str
+) -> PaymentCreation:
     if payment.request_fingerprint != fingerprint:
+        _record_payment_failure(
+            db,
+            owner_id,
+            AuditAction.PAYMENT_CREATE,
+            payment.id,
+            "idempotency_conflict",
+        )
         raise PaymentIdempotencyConflictError
+    _stage_payment_event(
+        db,
+        owner_id,
+        AuditAction.PAYMENT_CREATE,
+        payment.id,
+        AuditOutcome.SUCCESS,
+        replayed=True,
+    )
+    db.commit()
     return PaymentCreation(payment=payment, replayed=True)
 
 
@@ -163,6 +227,8 @@ def _claim_pending(
     owner_id: int,
     payment_id: int,
     target_status: PaymentStatus,
+    *,
+    commit: bool = True,
 ) -> PaymentProviderInput:
     claimed_id = db.execute(
         update(Payment)
@@ -176,7 +242,8 @@ def _claim_pending(
     ).scalar_one_or_none()
     if claimed_id is None:
         raise PaymentStateConflictError
-    db.commit()
+    if commit:
+        db.commit()
     return PaymentProviderInput(payment_id=claimed_id)
 
 
@@ -217,6 +284,19 @@ def _complete_processing(
         _apply_provider_result(payment, result)
         if result.status is PaymentStatus.COMPLETED:
             record_completed_payment(db, payment)
+        _stage_payment_event(
+            db,
+            owner_id,
+            AuditAction.PAYMENT_PROCESS,
+            payment.id,
+            (
+                AuditOutcome.SUCCESS
+                if result.status is PaymentStatus.COMPLETED
+                else AuditOutcome.FAILURE
+            ),
+            result.status,
+            reason_code=result.failure_code or "provider_failure",
+        )
         db.commit()
     except Exception:
         db.rollback()
@@ -235,3 +315,47 @@ def _completed_journal_exists(db: Session, payment_id: int) -> bool:
         )
         is not None
     )
+
+
+def _stage_payment_event(
+    db: Session,
+    owner_id: int,
+    action: AuditAction,
+    payment_id: int | None,
+    outcome: AuditOutcome,
+    status: PaymentStatus | None = None,
+    *,
+    replayed: bool = False,
+    reason_code: str | None = None,
+) -> None:
+    stage_event(
+        db,
+        AuditEventData(
+            actor_user_id=owner_id,
+            action=action,
+            resource_type=AuditResourceType.PAYMENT,
+            resource_id=payment_id,
+            outcome=outcome,
+            reason_code=reason_code if outcome is AuditOutcome.FAILURE else None,
+            details=payment_audit_details(status, replayed=replayed),
+        ),
+    )
+
+
+def _record_payment_failure(
+    db: Session,
+    owner_id: int,
+    action: AuditAction,
+    payment_id: int | None,
+    reason_code: str = "state_conflict",
+) -> None:
+    db.rollback()
+    _stage_payment_event(
+        db,
+        owner_id,
+        action,
+        payment_id,
+        AuditOutcome.FAILURE,
+        reason_code=reason_code,
+    )
+    db.commit()

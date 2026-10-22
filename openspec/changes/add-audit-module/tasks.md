@@ -36,9 +36,9 @@ Chain strategy: stacked-to-main
 - [x] 2.3 REFACTOR: centralize response mapping and query ordering; reject unsupported resource combinations without leaking rows.
 
 ## Phase 3: Payment integration (PR 3, <=260 lines)
-- [ ] 3.1 RED: test create/process/cancel success, replay, business failure reason, atomic commit, post-rollback durability, and unaudited provider exceptions.
-- [ ] 3.2 GREEN: modify `app/modules/payments/service.py` to stage success events and persist known failures in a new transaction.
-- [ ] 3.3 REFACTOR: preserve processing claims, ledger behavior, and existing API responses while sharing audit transaction helpers.
+- [x] 3.1 RED: test create/process/cancel success, replay, business failure reason, atomic commit, post-rollback durability, and unaudited provider exceptions.
+- [x] 3.2 GREEN: modify `app/modules/payments/service.py` to stage success events and persist known failures in a new transaction.
+- [x] 3.3 REFACTOR: preserve processing claims, ledger behavior, and existing API responses while sharing audit transaction helpers.
 
 ## Phase 4: Reconciliation integration (PR 4, <=260 lines)
 - [ ] 4.1 RED: test ingest/replay/conflict, matched/mismatched/unmatched/replay execution, races, atomic success, durable failure, and isolation.

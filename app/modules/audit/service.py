@@ -1,10 +1,48 @@
-﻿from datetime import UTC
+from dataclasses import dataclass
+from datetime import UTC
 
 from sqlalchemy.orm import Query, Session
 
+from app.modules.audit.enums import AuditAction, AuditOutcome, AuditResourceType
 from app.modules.audit.exceptions import AuditEventNotFoundError
 from app.modules.audit.model import AuditEvent
 from app.modules.audit.schema import AuditEventListQuery
+
+
+@dataclass(frozen=True)
+class AuditEventData:
+    actor_user_id: int
+    action: AuditAction
+    resource_type: AuditResourceType
+    resource_id: int | None
+    outcome: AuditOutcome
+    details: dict[str, object]
+    reason_code: str | None = None
+
+
+_DETAIL_KEYS = {
+    AuditAction.PAYMENT_CREATE: frozenset({"replayed", "status"}),
+    AuditAction.PAYMENT_PROCESS: frozenset({"replayed", "status"}),
+    AuditAction.PAYMENT_CANCEL: frozenset({"replayed", "status"}),
+    AuditAction.EXTERNAL_TRANSACTION_INGEST: frozenset({"replayed", "result"}),
+    AuditAction.RECONCILIATION_EXECUTE: frozenset({"replayed", "result"}),
+}
+
+
+def stage_event(db: Session, event: AuditEventData) -> None:
+    if event.details.keys() - _DETAIL_KEYS[event.action]:
+        raise ValueError("Audit details are not allowlisted for this action")
+    db.add(
+        AuditEvent(
+            actor_user_id=event.actor_user_id,
+            action=event.action,
+            resource_type=event.resource_type,
+            resource_id=event.resource_id,
+            outcome=event.outcome,
+            reason_code=event.reason_code,
+            details=event.details,
+        )
+    )
 
 
 def list_audit_events(

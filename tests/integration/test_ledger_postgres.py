@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.audit.enums import AuditAction
+from app.modules.audit.model import AuditEvent
 from app.modules.ledger.enums import LedgerAccount, LedgerEntrySide
 from app.modules.ledger.model import JournalEntry
 from app.modules.ledger.service import get_payment_journal
@@ -188,12 +190,19 @@ def test_local_journal_failure_rolls_back_completed_transition(
         journal = db.scalar(
             select(JournalEntry).where(JournalEntry.payment_id == payment.id)
         )
+        audit = db.scalar(
+            select(AuditEvent.id).where(
+                AuditEvent.action == AuditAction.PAYMENT_PROCESS,
+                AuditEvent.resource_id == payment.id,
+            )
+        )
     finally:
         db.close()
 
     assert persisted is not None
     assert persisted.status is PaymentStatus.PROCESSING
     assert journal is None
+    assert audit is None
 
 
 class BlockingSuccessProvider:

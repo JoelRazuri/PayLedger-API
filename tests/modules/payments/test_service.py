@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.modules.audit.model import AuditEvent
 from app.modules.payments.enums import (
     Currency,
     PaymentProcessScenario,
@@ -60,7 +61,8 @@ def test_create_payment_persists_pending_snapshot() -> None:
     assert result.payment.status is PaymentStatus.PENDING
     assert result.payment.amount == Decimal("12.50")
     assert result.payment.recipient_reference == "CBU-123"
-    db.add.assert_called_once_with(result.payment)
+    assert db.add.call_args_list[0].args == (result.payment,)
+    assert isinstance(db.add.call_args_list[1].args[0], AuditEvent)
     db.commit.assert_called_once_with()
     db.refresh.assert_called_once_with(result.payment)
 
@@ -76,8 +78,8 @@ def test_create_payment_replays_identical_request_without_second_insert() -> Non
 
     assert result.payment is existing
     assert result.replayed is True
-    db.add.assert_not_called()
-    db.commit.assert_not_called()
+    assert isinstance(db.add.call_args.args[0], AuditEvent)
+    db.commit.assert_called_once_with()
 
 
 def test_create_payment_rejects_different_payload_for_reused_owner_key() -> None:
@@ -94,7 +96,9 @@ def test_create_payment_rejects_different_payload_for_reused_owner_key() -> None
             request=payment_request("20"),
         )
 
-    db.add.assert_not_called()
+    event = db.add.call_args.args[0]
+    assert isinstance(event, AuditEvent)
+    assert event.reason_code == "idempotency_conflict"
 
 
 def test_create_payment_allows_the_same_key_for_another_owner() -> None:
@@ -116,7 +120,7 @@ def test_create_payment_rolls_back_unique_race_and_replays_winner() -> None:
     winner = Payment(id=5, owner_id=7, idempotency_key="key-1")
     winner.request_fingerprint = payment_fingerprint(request)
     db.query.return_value.filter.return_value.first.side_effect = [None, winner]
-    db.commit.side_effect = IntegrityError("insert", {}, Exception("duplicate"))
+    db.commit.side_effect = [IntegrityError("insert", {}, Exception("duplicate")), None]
 
     result = create_payment(db, owner_id=7, idempotency_key="key-1", request=request)
 
@@ -218,6 +222,7 @@ def test_unavailable_lifecycle_action_keeps_existing_state(action: str) -> None:
             cancel_payment(db, owner_id=7, payment_id=4)
 
     assert payment.status is PaymentStatus.COMPLETED
+    assert db.add.call_args.args[0].reason_code == "state_conflict"
 
 
 def test_provider_interruption_leaves_committed_claim_processing() -> None:

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.database import get_db
 from app.core.settings import get_settings
 from app.main import app
+from app.modules.audit.enums import AuditAction, AuditOutcome
+from app.modules.audit.model import AuditEvent
 from app.modules.auth.dependencies import get_current_user
 from app.modules.payments.enums import (
     Currency,
@@ -238,3 +240,72 @@ def test_two_sessions_allow_only_one_processing_claim(sessions) -> None:
         second.close()
 
     assert completed.status is PaymentStatus.COMPLETED
+
+
+def test_httpx_payment_flow_persists_server_owned_audit_outcomes(sessions) -> None:
+    db = sessions()
+    try:
+        owner = user(db, 5)
+        app.dependency_overrides[get_current_user] = lambda: owner
+        app.dependency_overrides[get_db] = lambda: db
+        payload = {
+            "amount": "12.50",
+            "currency": "ARS",
+            "provider": "mercado_pago",
+            "recipient": {
+                "name": "Ada Lovelace",
+                "account_type": "bank_account",
+                "reference": "CBU-123",
+            },
+        }
+        try:
+            with TestClient(app) as client:
+
+                def create(key: str):
+                    return client.post(
+                        "/payments", json=payload, headers={"Idempotency-Key": key}
+                    )
+
+                def process(payment, scenario: str):
+                    return client.post(
+                        f"/payments/{payment.json()['id']}/process",
+                        json={"simulation_scenario": scenario},
+                    )
+
+                created, replay = create("audit-1"), create("audit-1")
+                processed = process(created, "success")
+                rejected_result = process(create("audit-2"), "business_rejection")
+                cancelled = create("audit-3")
+                cancelled_result = client.post(
+                    f"/payments/{cancelled.json()['id']}/cancel"
+                )
+        finally:
+            app.dependency_overrides.clear()
+        events = db.scalars(
+            select(AuditEvent)
+            .where(AuditEvent.actor_user_id == owner.id)
+            .order_by(AuditEvent.id)
+        ).all()
+    finally:
+        db.close()
+
+    assert [
+        response.status_code
+        for response in (created, replay, processed, rejected_result, cancelled_result)
+    ] == [201, 200, 200, 200, 200]
+    assert [(event.action, event.outcome) for event in events] == [
+        (AuditAction.PAYMENT_CREATE, AuditOutcome.SUCCESS),
+        (AuditAction.PAYMENT_CREATE, AuditOutcome.SUCCESS),
+        (AuditAction.PAYMENT_PROCESS, AuditOutcome.SUCCESS),
+        (AuditAction.PAYMENT_CREATE, AuditOutcome.SUCCESS),
+        (AuditAction.PAYMENT_PROCESS, AuditOutcome.FAILURE),
+        (AuditAction.PAYMENT_CREATE, AuditOutcome.SUCCESS),
+        (AuditAction.PAYMENT_CANCEL, AuditOutcome.SUCCESS),
+    ]
+    assert events[1].details == {"replayed": True}
+    assert events[2].details == {"status": "completed"}
+    assert (events[4].details, events[4].reason_code) == (
+        {"status": "rejected"},
+        "business_rejection",
+    )
+    assert events[6].details == {"status": "cancelled"}
