@@ -26,6 +26,8 @@
 | 4.1 | `pytest tests/modules/reconciliation/test_service.py -k audit` failed: audit events were absent. | 2 passed | Triangulates ingest/replay/conflict and reconciliation result/replay/conflict. |
 | 4.2 | The RED audit assertions preceded reconciliation service changes. | 17 focused unit/PostgreSQL tests passed | Success events stage before their domain commit; known failures rollback then commit a separate event. |
 | 4.3 | Existing race and owner-isolation tests formed the safety net. | 17 passed; Ruff/import/diff checks passed | Retains savepoint recovery, Decimal/enum equality, and unchanged routes. |
+| 5.1 | Full suite initially failed collection with three `import file mismatch` errors because audit and payments had same-basename test modules without package markers. | Added empty `tests/modules/audit/__init__.py` and `tests/modules/payments/__init__.py`; full suite passed: 188 passed in 44.69s. Migration harness passed: 1 passed in 9.68s. | Markers restore the existing test-package convention only; no production behavior changed. |
+| 5.2 | N/A: verification-only task; no audit behavior was added. | Excluded-flow focused suite passed: 17 passed, 21 deselected in 1.95s; Ruff E/F/I, application import, and diff check passed. | Static call-site inventory confines audit staging to payment and reconciliation services; audit router exposes GET routes only. |
 ## Work Unit Evidence
 | Evidence | Result |
 |---|---|
@@ -40,5 +42,10 @@
 | Phase 3 rollback | Revert payment audit hooks and the Phase 3 payment/ledger tests without touching reconciliation. |
 | Phase 4 focused/runtime | `pytest tests/modules/reconciliation/test_service.py tests/integration/test_reconciliation_evidence_postgres.py` — 17 passed; two PostgreSQL sessions and HTTPX covered ingest/replay/conflict, reconcile result/replay/race/rollback/isolation. |
 | Phase 4 quality / rollback | `ruff check app tests --select E,F,I`, `python -c "import app.main"`, and `git diff --check` passed; revert reconciliation audit hooks and reconciliation tests only. |
+| Phase 5 full verification | `./.venv/Scripts/python.exe -m pytest` — initial RED: three collection errors from duplicate un-packaged test module names; after adding the two empty package markers, 188 passed in 44.69s. |
+| Phase 5 migration / trigger harness | `./.venv/Scripts/python.exe -m pytest tests/alembic/test_audit_migration.py -q` — 1 passed in 9.68s; the harness created a disposable PostgreSQL database, ran `upgrade head` -> `downgrade f4c4e8a1d5f3` -> `upgrade head`, then rejected both `UPDATE` and `DELETE` of `audit_events` with `DBAPIError`. |
+| Phase 5 quality | `./.venv/Scripts/python.exe -c "import app.main"`; `./.venv/Scripts/ruff.exe check app tests --select E,F,I`; and `git diff --check` — all passed. |
+| Phase 5 excluded flows | `pytest tests/modules/auth/test_router.py tests/modules/auth/test_dependencies.py tests/modules/payments/test_router.py tests/modules/payments/test_service.py -k "register or login or missing or invalid or create_maps_conflict or provider_interruption" -q` — 17 passed, 21 deselected in 1.95s. This covers GET/read-only audit routing in the full suite, registration/login, malformed payload/generic 422 rejection, missing/invalid JWT, and provider interruption; the staging-call inventory is limited to payment and reconciliation services. |
+| Phase 5 rollback / evidence preservation | Revert only `tests/modules/audit/__init__.py`, `tests/modules/payments/__init__.py`, and Phase 5 artifact entries to undo this verification fix. The functional audit rollback boundary remains the audited module/integration commits plus migration downgrade; preserve or export production audit evidence before any downgrade because it drops the immutable audit table. |
 ## Remaining Tasks
-- [ ] 5.1 through 5.2
+- None — all 14 tasks are complete.

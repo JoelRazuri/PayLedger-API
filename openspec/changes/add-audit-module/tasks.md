@@ -46,7 +46,7 @@ Chain strategy: stacked-to-main
 - [x] 4.3 REFACTOR: retain savepoint/unique-race recovery, Decimal/enum comparisons, and HTTP behavior.
 
 ## Phase 5: Final verification
-- [ ] 5.1 VERIFY: run full pytest, migration cycle/trigger harness, and `.\.venv\Scripts\python.exe -c "import app.main"`.
-- [ ] 5.2 VERIFY: run Ruff E/F/I and record excluded-flow coverage plus evidence-preserving rollback boundaries.
+- [x] 5.1 VERIFY: run full pytest, migration cycle/trigger harness, and `.\.venv\Scripts\python.exe -c "import app.main"`.
+- [x] 5.2 VERIFY: run Ruff E/F/I and record excluded-flow coverage plus evidence-preserving rollback boundaries.
 
 
