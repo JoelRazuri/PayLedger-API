@@ -31,9 +31,9 @@ Chain strategy: stacked-to-main
 - [x] 1.3 REFACTOR: name constraints/indexes, make downgrade remove trigger/function/table/enums, and keep the database surface append-only.
 
 ## Phase 2: Read-only discovery (PR 2, <=280 lines)
-- [ ] 2.1 RED: test owner scoping, deterministic pagination, action/resource/outcome/UTC filters, unknown/foreign `404`, no write route.
-- [ ] 2.2 GREEN: create `schema.py`, `service.py`, `router.py`, `exceptions.py`; register `GET /audit-events` routes in `app/main.py`.
-- [ ] 2.3 REFACTOR: centralize response mapping and query ordering; reject unsupported resource combinations without leaking rows.
+- [x] 2.1 RED: test owner scoping, deterministic pagination, action/resource/outcome/UTC filters, unknown/foreign `404`, no write route.
+- [x] 2.2 GREEN: create `schema.py`, `service.py`, `router.py`, `exceptions.py`; register `GET /audit-events` routes in `app/main.py`.
+- [x] 2.3 REFACTOR: centralize response mapping and query ordering; reject unsupported resource combinations without leaking rows.
 
 ## Phase 3: Payment integration (PR 3, <=260 lines)
 - [ ] 3.1 RED: test create/process/cancel success, replay, business failure reason, atomic commit, post-rollback durability, and unaudited provider exceptions.

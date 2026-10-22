@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.core.settings import get_settings
+from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.ledger.router import router as ledger_router
 from app.modules.payments.router import router as payments_router
@@ -21,6 +22,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(audit_router)
 app.include_router(users_router)
 app.include_router(payments_router)
 app.include_router(ledger_router)
