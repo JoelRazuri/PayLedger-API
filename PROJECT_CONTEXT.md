@@ -11,7 +11,7 @@ El dominio se divide de esta manera:
 - **Payments** representa la operación informada por la empresa.
 - **Ledger** registra el impacto contable de un pago completado.
 - **Reconciliation** compara los registros locales con evidencia de una fuente externa simulada.
-- **Audit** registrará las acciones relevantes realizadas en el sistema.
+- **Audit** registra de forma inmutable las acciones financieras relevantes y sus resultados.
 
 El proyecto también tiene un propósito educativo: practicar procesos habituales de sistemas financieros mediante FastAPI, PostgreSQL, SQLAlchemy y una arquitectura modular.
 
@@ -26,7 +26,7 @@ El proyecto también tiene un propósito educativo: practicar procesos habituale
 | Creación, consulta, procesamiento y cancelación de pagos | Implementada |
 | Asientos contables de doble entrada | Implementada |
 | Conciliación con un proveedor simulado | Implementada |
-| Auditoría básica | Pendiente |
+| Auditoría básica | Implementada |
 
 Queda fuera del alcance inicial:
 
@@ -52,7 +52,8 @@ app/
 │   ├── auth/
 │   ├── payments/
 │   ├── ledger/
-│   └── reconciliation/
+│   ├── reconciliation/
+│   └── audit/
 ├── shared/               # excepciones y utilidades compartidas
 └── main.py               # creación de FastAPI y registro de routers
 ```
@@ -86,7 +87,7 @@ Se mantiene un enfoque directo y Pythonic, sin una capa `repository` prematura. 
 
 La aplicación puede utilizar **una instancia local de PostgreSQL o la instancia de Docker Compose**. Son alternativas de ejecución; sus credenciales pueden ser diferentes y `DATABASE_URL` determina cuál utiliza la API.
 
-Las migraciones de Alembic versionan los cambios de `users`, credenciales, fechas con zona horaria, `payments`, `journal_entries`, `ledger_entries`, `external_transactions` y `reconciliations`.
+Las migraciones de Alembic versionan los cambios de `users`, credenciales, fechas con zona horaria, `payments`, `journal_entries`, `ledger_entries`, `external_transactions`, `reconciliations` y `audit_events`.
 
 ---
 
@@ -167,6 +168,19 @@ GET  /reconciliations/{reconciliation_id}
 
 Todos los endpoints requieren JWT, aíslan datos por usuario y normalizan las fechas expuestas a UTC. Los listados admiten paginación y las conciliaciones pueden filtrarse por resultado.
 
+### Audit
+
+Conserva un historial inmutable de las acciones financieras relevantes realizadas por usuarios autenticados. Registra el actor, la acción, el recurso, el resultado, un código de motivo para fallos de negocio y detalles construidos por el servidor mediante listas permitidas.
+
+Audita la creación, procesamiento y cancelación de pagos, la recepción de evidencia externa y la ejecución de conciliaciones. Los éxitos se persisten atómicamente con la operación de negocio; los fallos esperados se registran después del rollback. No conserva contraseñas, JWT, cuerpos HTTP sin procesar ni otros secretos.
+
+```http
+GET /audit-events
+GET /audit-events/{audit_event_id}
+```
+
+Las consultas requieren JWT, aíslan eventos por usuario y responden `404` tanto para identificadores inexistentes como ajenos. El listado admite paginación y filtros por acción, tipo e identificador de recurso, resultado y rango temporal. La base de datos impide actualizar o eliminar eventos mediante triggers.
+
 ---
 
 ## 6. Persistencia actual
@@ -179,8 +193,9 @@ Todos los endpoints requieren JWT, aíslan datos por usuario y normalizan las fe
 | `ledger_entries` | Movimientos débito y crédito que componen el asiento |
 | `external_transactions` | Evidencia inmutable recibida de proveedores externos simulados |
 | `reconciliations` | Intentos append-only con resultados, snapshots y claves idempotentes |
+| `audit_events` | Historial inmutable de acciones financieras, actores, recursos y resultados |
 
-El modelo de Audit se definirá cuando se diseñe ese módulo; este documento no anticipa tablas ni endpoints que todavía no existen.
+Las tablas financieras de Ledger, Reconciliation y Audit son append-only o inmutables según las reglas de cada módulo. PostgreSQL refuerza estas garantías mediante restricciones, índices y triggers, además de las validaciones de la aplicación.
 
 ---
 
@@ -202,7 +217,7 @@ El modelo de Audit se definirá cuando se diseñe ese módulo; este documento no
 
 ## 8. Estado y documentación de cambios
 
-Los módulos Users, Auth, Payments, Ledger y Reconciliation están implementados. Auth, Payments, Ledger y Reconciliation completaron su flujo de desarrollo y sus artefactos se conservan en:
+Los módulos Users, Auth, Payments, Ledger, Reconciliation y Audit están implementados. Sus cambios completados conservan los artefactos de planificación, implementación y verificación en:
 
 ```text
 openspec/changes/archive/
@@ -210,26 +225,23 @@ openspec/changes/archive/
 ├── 2026-08-06-add-authentication/
 ├── 2026-08-10-add-payments-module/
 ├── 2026-08-27-add-ledger-module/
-└── 2026-10-07-add-reconciliation-module/
+├── 2026-10-07-add-reconciliation-module/
+└── 2026-10-29-add-audit-module/
 ```
 
 Los documentos archivados contienen las propuestas, especificaciones, diseños, tareas y evidencias de verificación de cada cambio. Deben consultarse para conocer reglas detalladas; el código y las migraciones siguen siendo la fuente de verdad del estado ejecutable.
 
 Reconciliation cumple funcionalmente sus 8 requisitos y 15 escenarios, con 181 pruebas automatizadas y una comprobación manual integral aprobadas. Su archivo conserva un `verify-report.md` con `FAIL` y un `process-exception.md`: la limitación corresponde a evidencia histórica incompleta del proceso Strict TDD, no a un defecto funcional conocido.
 
+Audit cumple sus 6 requisitos y 15 escenarios. La verificación final ejecutó 191 pruebas automatizadas y la comprobación manual validó el flujo completo, los filtros, el aislamiento entre usuarios y la respuesta indistinguible para eventos ajenos o inexistentes.
+
 ---
 
 ## 9. Próximos pasos
 
-El siguiente módulo es **Audit**. Para mantener una primera versión pequeña y útil, primero se deben definir:
+El siguiente paso es ejecutar una prueba integral de Users, Auth, Payments, Ledger, Reconciliation y Audit para cerrar formalmente la primera versión de la API.
 
-1. qué acciones relevantes deben generar eventos de auditoría;
-2. qué actor, recurso, resultado y contexto mínimo se conservarán;
-3. cómo se garantiza que el historial sea inmutable y aislado por usuario;
-4. qué consultas necesita la primera versión;
-5. qué datos sensibles deben excluirse explícitamente.
-
-Después se realizará una prueba integral de Users, Auth, Payments, Ledger, Reconciliation y Audit para cerrar la primera versión de la API.
+Después del cierre se evaluarán mejoras de una versión posterior —como organizaciones, roles, permisos avanzados o soporte multimoneda— mediante nuevos cambios SDD. No forman parte del alcance de la v1.
 
 ---
 
