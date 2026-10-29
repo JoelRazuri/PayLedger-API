@@ -28,6 +28,8 @@ El proyecto también tiene un propósito educativo: practicar procesos habituale
 | Conciliación con un proveedor simulado | Implementada |
 | Auditoría básica | Implementada |
 
+La **v1 está cerrada**. El 29 de octubre de 2026 se completó la comprobación manual integral de Auth, Payments, Ledger, Reconciliation y Audit sobre una misma operación financiera.
+
 Queda fuera del alcance inicial:
 
 - movimiento o custodia de dinero real;
@@ -235,13 +237,15 @@ Reconciliation cumple funcionalmente sus 8 requisitos y 15 escenarios, con 181 p
 
 Audit cumple sus 6 requisitos y 15 escenarios. La verificación final ejecutó 191 pruebas automatizadas y la comprobación manual validó el flujo completo, los filtros, el aislamiento entre usuarios y la respuesta indistinguible para eventos ajenos o inexistentes.
 
+La validación integral de la v1 confirmó el registro y la autenticación, el ciclo de vida de pagos, la generación de un asiento balanceado, la conciliación con evidencia externa y la trazabilidad completa mediante eventos de auditoría.
+
 ---
 
 ## 9. Próximos pasos
 
-El siguiente paso es ejecutar una prueba integral de Users, Auth, Payments, Ledger, Reconciliation y Audit para cerrar formalmente la primera versión de la API.
+La primera versión está finalizada. Los próximos cambios deben comenzar como funcionalidades de una versión posterior y justificarse mediante un nuevo flujo SDD.
 
-Después del cierre se evaluarán mejoras de una versión posterior —como organizaciones, roles, permisos avanzados o soporte multimoneda— mediante nuevos cambios SDD. No forman parte del alcance de la v1.
+Las posibles evoluciones incluyen organizaciones, roles, permisos avanzados, soporte multimoneda y nuevas capacidades de observabilidad. Ninguna forma parte del alcance cerrado de la v1.
 
 ---
 
