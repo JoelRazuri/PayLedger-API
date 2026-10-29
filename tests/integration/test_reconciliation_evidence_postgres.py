@@ -196,6 +196,15 @@ def test_two_postgresql_sessions_replay_one_exact_external_transaction(
             )
             .count()
         )
+        events = (
+            verifier.query(AuditEvent)
+            .filter(
+                AuditEvent.actor_user_id == owner_id,
+                AuditEvent.action == AuditAction.EXTERNAL_TRANSACTION_INGEST,
+            )
+            .order_by(AuditEvent.id)
+            .all()
+        )
     finally:
         verifier.close()
 
@@ -204,6 +213,10 @@ def test_two_postgresql_sessions_replay_one_exact_external_transaction(
         results[0].external_transaction.id
     }
     assert sorted(result.replayed for result in results) == [False, True]
+    assert [(event.outcome, event.details) for event in events] == [
+        (AuditOutcome.SUCCESS, {}),
+        (AuditOutcome.SUCCESS, {"replayed": True}),
+    ]
 
 
 def test_postgresql_listing_is_received_time_then_id_descending(sessions) -> None:
@@ -314,6 +327,15 @@ def test_two_postgresql_sessions_replay_one_same_key_reconciliation(
             )
             .count()
         )
+        events = (
+            verifier.query(AuditEvent)
+            .filter(
+                AuditEvent.actor_user_id == owner_id,
+                AuditEvent.action == AuditAction.RECONCILIATION_EXECUTE,
+            )
+            .order_by(AuditEvent.id)
+            .all()
+        )
     finally:
         verifier.close()
 
@@ -322,6 +344,10 @@ def test_two_postgresql_sessions_replay_one_same_key_reconciliation(
         results[0].reconciliation.id
     }
     assert sorted(result.replayed for result in results) == [False, True]
+    assert [(event.outcome, event.details) for event in events] == [
+        (AuditOutcome.SUCCESS, {"result": "matched"}),
+        (AuditOutcome.SUCCESS, {"replayed": True}),
+    ]
 
 
 def test_reconciliation_postgresql_runtime_proves_snapshots_queries_and_isolation(
